@@ -1,0 +1,7 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+gcp-key.json
+.vscode/
+.DS_Store

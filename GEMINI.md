@@ -76,18 +76,18 @@ yt-kpi-monitor/
 - [x] ローカル検証環境用の環境変数定義サンプルの作成。
 
 ### フェーズ2: 日次KPI取得 ＆ 差分通知の実装
-- [ ] `youtube_client.py`: YouTube Data API v3 を用いたチャンネル情報・動画情報の取得処理。
-- [ ] `bigquery_client.py`: 最新KPIの保存および前回データとの比較用クエリの実行処理。
-- [ ] `slack_client.py`: 登録者数やいいね数が増えた際のメッセージフォーマット整形とWebhook送信。
-- [ ] `main_daily.py`: 上記を統合した日次実行スクリプト。
-- [ ] `.github/workflows/daily_kpi_alert.yml`: GitHub Actionsの設定。
+- [x] `youtube_client.py`: YouTube Data API v3 を用いたチャンネル情報・動画情報の取得処理。
+- [x] `bigquery_client.py`: 最新KPIの保存および前回データとの比較用クエリの実行処理。
+- [x] `slack_client.py`: 登録者数やいいね数が増えた際のメッセージフォーマット整形とWebhook送信。
+- [x] `main_daily.py`: 上記を統合した日次実行スクリプト。
+- [x] `.github/workflows/daily_kpi_alert.yml`: GitHub Actionsの設定。
 
 ### フェーズ3: 週次/月次レポート ＆ Gemini連携の実装
 - [ ] YouTube Analytics APIから、より詳細な指標（視聴維持率、トラフィックソースなど）を取得する処理の追加。
-- [ ] `gemini_client.py`: Google AI Studio経由でGemini APIを呼び出す処理の実装。
-- [ ] 戦略アドバイスを引き出すための、Markdown形式のプロンプトテンプレート設計。
-- [ ] `main_weekly.py`: 週次集計データとAIアドバイスを統合してSlackへリッチテキストで投稿するスクリプト。
-- [ ] `.github/workflows/weekly_report.yml`: 定期レポート用のGitHub Actionsの設定。
+- [x] `gemini_client.py`: Google AI Studio経由でGemini APIを呼び出す処理の実装。
+- [x] 戦略アドバイスを引き出すための、Markdown形式のプロンプトテンプレート設計。
+- [x] `main_weekly.py`: 週次集計データとAIアドバイスを統合してSlackへリッチテキストで投稿するスクリプト。
+- [x] `.github/workflows/weekly_report.yml`: 定期レポート用のGitHub Actionsの設定。
 
 ---
 
