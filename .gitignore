@@ -1,7 +1,19 @@
 __pycache__/
 *.py[cod]
 *$py.class
-.env
+
+# Credentials
+.env*
+*-key.json
+*.json
+!config/**/*.json  # 設定ファイルのみ除外解除
+!google-services.json # プロジェクトに必要な場合は除外解除（現在は不要）
+
+# Infrastructure / Tooling
 gcp-key.json
 .vscode/
+.idea/
 .DS_Store
+venv/
+.venv/
+node_modules/
