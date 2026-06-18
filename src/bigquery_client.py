@@ -38,8 +38,8 @@ class BigQueryClient:
         job_config = bigquery.LoadJobConfig(
             source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
             schema=[
-                bigquery.SchemaField("dt", "DATE"),
-                bigquery.SchemaField("channel_id", "STRING"),
+                bigquery.SchemaField("dt", "DATE", mode="REQUIRED"),
+                bigquery.SchemaField("channel_id", "STRING", mode="REQUIRED"),
                 bigquery.SchemaField("channel_title", "STRING"),
                 bigquery.SchemaField("subscriber_count", "INT64"),
                 bigquery.SchemaField("view_count", "INT64"),
