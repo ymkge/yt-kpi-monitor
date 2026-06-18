@@ -22,9 +22,14 @@ jobs:
           pip install -r requirements.txt
           
       - name: Create Service Account Key
+        shell: python
         env:
           GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
-        run: echo "$GCP_SERVICE_ACCOUNT_KEY" > gcp-key.json
+        run: |
+          import os
+          key = os.environ['GCP_SERVICE_ACCOUNT_KEY']
+          with open('gcp-key.json', 'w') as f:
+              f.write(key)
         
       - name: Run Weekly Report
         env:
