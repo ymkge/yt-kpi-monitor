@@ -22,7 +22,9 @@ jobs:
           pip install -r requirements.txt
           
       - name: Create Service Account Key
-        run: echo "${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}" > gcp-key.json
+        env:
+          GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+        run: echo "$GCP_SERVICE_ACCOUNT_KEY" > gcp-key.json
         
       - name: Run Daily Monitor
         env:
