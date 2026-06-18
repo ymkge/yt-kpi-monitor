@@ -18,7 +18,7 @@ GitHub ActionsとGoogle Cloudを活用することで、完全無料枠（Free T
 ## アーキテクチャ構成
 *   **実行環境**: GitHub Actions (cronスケジューラ)
 *   **データソース**: YouTube Data API v3
-*   **データウェアハウス**: Google BigQuery
+*   **データウェアハウス**: Google BigQuery (Sandbox環境 / Batch Load方式)
 *   **AIエンジン**: Gemini 2.0 Flash (Google AI Studio)
 *   **通知先**: Slack (Incoming Webhook)
 
@@ -27,6 +27,7 @@ GitHub ActionsとGoogle Cloudを活用することで、完全無料枠（Free T
 ### 1. Google Cloud 設定
 1.  BigQueryでデータセットを作成。
 2.  `config/query/create_channel_kpis_table.sql` を実行し、`channel_kpis` テーブルを作成。
+    *   ※ SQL内の `{{project_id}}` 等は自身の環境に置換すること。
 3.  サービスアカウントを作成し、「BigQuery データ編集者」「BigQuery ジョブユーザー」権限を付与して JSON キーを発行。
 
 ### 2. GitHub Secrets の登録
@@ -38,7 +39,7 @@ GitHub ActionsとGoogle Cloudを活用することで、完全無料枠（Free T
 | `YOUTUBE_CHANNEL_ID` | 監視対象のチャンネルID (UC...) |
 | `GCP_PROJECT_ID` | GCP プロジェクトID |
 | `GCP_DATASET_ID` | BigQuery データセット名 |
-| `GCP_SERVICE_ACCOUNT_KEY` | サービスアカウントのJSONキー内容すべて |
+| `GCP_SERVICE_ACCOUNT_KEY` | サービスアカウントのJSONキー内容すべて（改行含めそのまま） |
 | `GEMINI_API_KEY` | Google AI Studio のAPIキー |
 | `SLACK_WEBHOOK_URL` | Slack Webhook URL |
 
