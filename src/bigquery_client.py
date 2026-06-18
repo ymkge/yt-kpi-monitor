@@ -16,26 +16,40 @@ class BigQueryClient:
     def save_kpi(self, kpi_data):
         """
         KPIデータをBigQueryに保存する。
+        (Streaming insertは無料枠で制限されているため、DML INSERTを使用する)
         """
-        table_id = f"{self.project_id}.{self.dataset_id}.channel_kpis"
+        table_id = f"`{self.project_id}.{self.dataset_id}.channel_kpis`"
         
-        # BigQueryのスキーマに合わせて整形
-        rows_to_insert = [
-            {
-                "dt": datetime.now().strftime("%Y-%m-%d"),
-                "channel_id": kpi_data["channel_id"],
-                "channel_title": kpi_data["channel_title"],
-                "subscriber_count": kpi_data["subscriber_count"],
-                "view_count": kpi_data["view_count"],
-                "video_count": kpi_data["video_count"],
-                "total_like_count": kpi_data["total_like_count"],
-                "updated_at": datetime.now().isoformat(),
-            }
-        ]
+        query = f"""
+            INSERT INTO {table_id} (
+                dt, channel_id, channel_title, subscriber_count, 
+                view_count, video_count, total_like_count, updated_at
+            )
+            VALUES (
+                CURRENT_DATE('Asia/Tokyo'),
+                @channel_id,
+                @channel_title,
+                @subscriber_count,
+                @view_count,
+                @video_count,
+                @total_like_count,
+                CURRENT_TIMESTAMP()
+            )
+        """
         
-        errors = self.client.insert_rows_json(table_id, rows_to_insert)
-        if errors:
-            raise RuntimeError(f"Failed to insert rows to BigQuery: {errors}")
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("channel_id", "STRING", kpi_data["channel_id"]),
+                bigquery.ScalarQueryParameter("channel_title", "STRING", kpi_data["channel_title"]),
+                bigquery.ScalarQueryParameter("subscriber_count", "INT64", kpi_data["subscriber_count"]),
+                bigquery.ScalarQueryParameter("view_count", "INT64", kpi_data["view_count"]),
+                bigquery.ScalarQueryParameter("video_count", "INT64", kpi_data["video_count"]),
+                bigquery.ScalarQueryParameter("total_like_count", "INT64", kpi_data["total_like_count"]),
+            ]
+        )
+        
+        query_job = self.client.query(query, job_config=job_config)
+        query_job.result()  # 実行完了を待機
 
     def fetch_previous_kpi(self, channel_id, today_str=None):
         """
