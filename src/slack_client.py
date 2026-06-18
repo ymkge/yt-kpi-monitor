@@ -41,6 +41,9 @@ class SlackClient:
             ]
         }
 
+        response = requests.post(self.webhook_url, json=payload)
+        response.raise_for_status()
+
     def send_weekly_report(self, summary_data, advice_text):
         """
         週次集計データとGeminiの分析結果を含めたレポートを送信する。
