@@ -44,7 +44,7 @@ class SlackClient:
         response = requests.post(self.webhook_url, json=payload)
         response.raise_for_status()
 
-    def send_weekly_report(self, summary_data, advice_text):
+    def send_weekly_report(self, summary_data, advice_text, top_views_videos=None, top_likes_videos=None):
         """
         週次集計データとGeminiの分析結果を含めたレポートを送信する。
         """
@@ -59,22 +59,49 @@ class SlackClient:
             {"title": "現在登録者数", "value": f"{summary_data['current_subscribers']:,}", "short": True},
         ]
 
+        attachments = [
+            {
+                "title": "数値サマリ",
+                "color": "#36a64f",
+                "fields": fields
+            }
+        ]
+
+        # 動画ランキングの追加
+        if top_views_videos or top_likes_videos:
+            ranking_text = ""
+            if top_views_videos:
+                ranking_text += "*🔥 再生数ランキング (直近28日間)*\n"
+                for idx, video in enumerate(top_views_videos, 1):
+                    ranking_text += f"{idx}. {video['title']} (再生数: {video['views']:,}回, いいね数: {video['likes']:,}回)\n"
+                ranking_text += "\n"
+
+            if top_likes_videos:
+                ranking_text += "*👍 高評価（いいね）数ランキング (直近28日間)*\n"
+                for idx, video in enumerate(top_likes_videos, 1):
+                    ranking_text += f"{idx}. {video['title']} (いいね数: {video['likes']:,}回, 再生数: {video['views']:,}回)\n"
+
+            attachments.append({
+                "title": "🎬 動画パフォーマンスランキング",
+                "color": "#ff9900",
+                "text": ranking_text.strip(),
+                "mrkdwn_in": ["text"]
+            })
+
+
+        # Geminiアドバイスの追加
+        attachments.append({
+            "title": "🤖 Gemini AI 戦略アドバイス",
+            "color": "#4385f4",
+            "text": advice_text,
+            "mrkdwn_in": ["text"]
+        })
+
         payload = {
             "text": f"📅 *YouTube Weekly Strategy Report ({start_date} ~ {end_date})*",
-            "attachments": [
-                {
-                    "title": "数値サマリ",
-                    "color": "#36a64f",
-                    "fields": fields
-                },
-                {
-                    "title": "🤖 Gemini AI 戦略アドバイス",
-                    "color": "#4385f4",
-                    "text": advice_text,
-                    "mrkdwn_in": ["text"]
-                }
-            ]
+            "attachments": attachments
         }
 
         response = requests.post(self.webhook_url, json=payload)
         response.raise_for_status()
+

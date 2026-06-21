@@ -1,6 +1,8 @@
 import os
+import time
 from google import genai
 from google.genai import types
+from google.genai.errors import APIError
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -31,12 +33,27 @@ class GeminiClient:
 
 回答は簡潔かつデータに基づいた具体的な内容にしてください。
 """
-        response = self.client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.7,
-            )
-        )
-        
-        return response.text
+        max_retries = 3
+        retry_delay = 10  # 429エラー時の初回待機時間（秒）
+
+        for attempt in range(max_retries):
+            try:
+                response = self.client.models.generate_content(
+                    model="gemini-2.0-flash",
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        temperature=0.7,
+                    )
+                )
+                return response.text
+            except APIError as e:
+                # 429 RESOURCE_EXHAUSTED のエラーハンドリング
+                if e.code == 429 and attempt < max_retries - 1:
+                    print(f"Gemini API rate limit exceeded (429). Retrying in {retry_delay}s... (Attempt {attempt + 1}/{max_retries})")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # 指数バックオフ
+                else:
+                    raise e
+            except Exception as e:
+                raise e
+

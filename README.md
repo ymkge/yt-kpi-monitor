@@ -31,17 +31,41 @@ GitHub ActionsとGoogle Cloudを活用することで、完全無料枠（Free T
 3.  サービスアカウントを作成し、「BigQuery データ編集者」「BigQuery ジョブユーザー」権限を付与して JSON キーを発行。
 
 ### 2. GitHub Secrets の登録
-リポジトリの **Settings > Secrets and variables > Actions** に以下の値を登録してください。
+リポジトリ of **Settings > Secrets and variables > Actions** に以下の値を登録してください。
 
 | 名前 | 内容 |
 | :--- | :--- |
 | `YOUTUBE_API_KEY` | YouTube Data API v3 のキー |
 | `YOUTUBE_CHANNEL_ID` | 監視対象のチャンネルID (UC...) |
+| `YOUTUBE_OAUTH_CLIENT_ID` | YouTube Analytics OAuth 2.0 クライアントID |
+| `YOUTUBE_OAUTH_CLIENT_SECRET` | YouTube Analytics OAuth 2.0 クライアントシークレット |
+| `YOUTUBE_OAUTH_REFRESH_TOKEN` | OAuth 2.0 リフレッシュトークン |
 | `GCP_PROJECT_ID` | GCP プロジェクトID |
 | `GCP_DATASET_ID` | BigQuery データセット名 |
 | `GCP_SERVICE_ACCOUNT_KEY` | サービスアカウントのJSONキー内容すべて（改行含めそのまま） |
 | `GEMINI_API_KEY` | Google AI Studio のAPIキー |
 | `SLACK_WEBHOOK_URL` | Slack Webhook URL |
+
+### 3. YouTube Analytics API (OAuth2) セットアップ
+週次レポートで動画ランキング（再生数・CTR）を機能させるために、以下の手順でOAuth2認証を通す必要があります。
+
+1. **Google Cloud Console** で以下を実施：
+   * `YouTube Analytics API` を有効化する。
+   * 「OAuth 同意画面」を設定（ユーザーの種類: 外部、テストユーザーに自身のYouTubeアカウントを追加）。
+     * 必要なスコープ: `https://www.googleapis.com/auth/yt-analytics.readonly` および `https://www.googleapis.com/auth/youtube.readonly`
+   * 「認証情報」から **OAuth 2.0 クライアント ID** (種類: デスクトップ アプリ) を作成。
+   * 作成したクライアントIDのJSONキーをダウンロードし、プロジェクトルートに `client_secret.json` として配置。
+2. **リフレッシュトークンの取得**:
+   * ローカル環境で以下のスクリプトを実行：
+     ```bash
+     python scripts/get_oauth_tokens.py
+     ```
+   * ブラウザが起動するので、上記で登録したテストユーザーアカウントでログイン・認証を承認します。
+   * コンソールに出力された `Refresh Token`, `Client ID`, `Client Secret` をコピーします。
+3. **環境変数の設定**:
+   * コピーした値を `.env` または GitHub Secrets にそれぞれ設定します。
+   * ※ 設定完了後、ローカルの `client_secret.json` は不要なため削除してください。
+
 
 ## ディレクトリ構成
 ```text
@@ -75,16 +99,15 @@ yt-kpi-monitor/
 - [x] `main_daily.py`: 上記を統合した日次実行スクリプト
 - [x] `.github/workflows/daily_kpi_alert.yml`: GitHub Actionsの設定
 
-### フェーズ3: 週次/月次レポート ＆ Gemini連携の実装 (進行中)
+### フェーズ3: 週次/月次レポート ＆ Gemini連携の実装 (完了)
 - [x] `gemini_client.py`: Google AI Studio経由でGemini APIを呼び出す処理の実装
 - [x] `main_weekly.py`: 週次集計データとAIアドバイスを統合してSlackへリッチテキストで投稿するスクリプト
 - [x] `.github/workflows/weekly_report.yml`: 定期レポート用のGitHub Actionsの設定
-- [ ] YouTube Analytics APIから、より詳細な指標（視聴維持率、トラフィックソースなど）を取得する処理の追加
+- [x] YouTube Analytics APIから、より詳細な指標（視聴維持率、トラフィックソースなど）を取得する処理の追加
 
 ### 今後の拡張予定 (Next Steps)
-- [ ] YouTube Analytics API (OAuth) 連携による詳細分析
+- [x] YouTube Analytics API (OAuth) 連携による詳細分析
 - [ ] エラー発生時のSlack通知強化
 - [ ] Looker Studio によるデータ可視化
-- [ ] 日時れポーティングの強化（直近14日以内にリリースされた動画のCTR、再生数を連携する）
-- [ ] 週次レポーティングの強化 (直近28日間のCTRのランキング1-3位、再生数のランキング1-3位を連携する)
+- [x] 週次レポーティングの強化 (直近28日間の再生数のランキング1-3位、高評価数（いいね数）のランキング1-3位を連携する)
 - [ ] 月次レポーティングの導入 (月間での累積でのランキングや月間サマリー情報、LLMでの改善ポイント抽出レポートなど)
