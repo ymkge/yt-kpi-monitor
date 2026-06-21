@@ -6,20 +6,20 @@
 GitHub ActionsとGoogle Cloudを活用することで、完全無料枠（Free Tier）での自律的な運用を実現しています。
 
 ## 主な機能
-*   **v（Daily Monitor）**
+*   **日次KPIアラート（Daily Monitor）**
     *   毎日 0:00 (JST) に最新のチャンネル統計を取得。
     *   前回実行時からの差分（登録者数やいいね数の増加）を検知し、Slackへ通知。
     *   取得したデータを Google BigQuery へ永久蓄積。
 *   **週次AI戦略レポート（Weekly Advisor）**
     *   毎週月曜 0:00 (JST) に直近1週間のデータを集計。
-    *   集計データを元に、Gemini 2.0 Flashが「現状分析」「良かった点」「改善案」「翌週のアクション」を生成。
+    *   集計データを元に、Gemini 3.5 Flashが「現状分析」「良かった点」「改善案」「翌週のアクション」を生成。
     *   データアナリスト視点のサマリレポートとしてSlackへ自動投稿。
 
 ## アーキテクチャ構成
 *   **実行環境**: GitHub Actions (cronスケジューラ)
-*   **データソース**: YouTube Data API v3
+*   **データソース**: YouTube Data API v3 & YouTube Analytics API v2
 *   **データウェアハウス**: Google BigQuery (Sandbox環境 / Batch Load方式)
-*   **AIエンジン**: Gemini 2.0 Flash (Google AI Studio)
+*   **AIエンジン**: Gemini 3.5 Flash (Google AI Studio)
 *   **通知先**: Slack (Incoming Webhook)
 
 ## セットアップ手順
@@ -31,7 +31,7 @@ GitHub ActionsとGoogle Cloudを活用することで、完全無料枠（Free T
 3.  サービスアカウントを作成し、「BigQuery データ編集者」「BigQuery ジョブユーザー」権限を付与して JSON キーを発行。
 
 ### 2. GitHub Secrets の登録
-リポジトリ of **Settings > Secrets and variables > Actions** に以下の値を登録してください。
+リポジトリの **Settings > Secrets and variables > Actions** に以下の値を登録してください。
 
 | 名前 | 内容 |
 | :--- | :--- |
@@ -44,10 +44,11 @@ GitHub ActionsとGoogle Cloudを活用することで、完全無料枠（Free T
 | `GCP_DATASET_ID` | BigQuery データセット名 |
 | `GCP_SERVICE_ACCOUNT_KEY` | サービスアカウントのJSONキー内容すべて（改行含めそのまま） |
 | `GEMINI_API_KEY` | Google AI Studio のAPIキー |
+| `GEMINI_MODEL` | 使用するGeminiモデル名（任意、未指定時は `gemini-3.5-flash`） |
 | `SLACK_WEBHOOK_URL` | Slack Webhook URL |
 
 ### 3. YouTube Analytics API (OAuth2) セットアップ
-週次レポートで動画ランキング（再生数・CTR）を機能させるために、以下の手順でOAuth2認証を通す必要があります。
+週次レポートで動画ランキング（再生数・高評価数）を機能させるために、以下の手順でOAuth2認証を通す必要があります。
 
 1. **Google Cloud Console** で以下を実施：
    * `YouTube Analytics API` を有効化する。
@@ -74,8 +75,11 @@ yt-kpi-monitor/
 │   └── AGENTS.md        # Antigravity用の開発ルール（自動認識されます）
 ├── .github/workflows/   # GitHub Actions (日次/週次)
 ├── config/query/        # BigQuery実行用SQL
+├── scripts/             # ローカル実行用補助スクリプト
+│   └── get_oauth_tokens.py
 ├── src/                 # Pythonソースコード
 │   ├── youtube_client.py
+│   ├── youtube_analytics_client.py
 │   ├── bigquery_client.py
 │   ├── gemini_client.py
 │   ├── slack_client.py
