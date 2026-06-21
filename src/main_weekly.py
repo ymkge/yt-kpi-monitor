@@ -52,10 +52,8 @@ def main():
                     refresh_token=oauth_refresh_token
                 )
 
-                print(f"Fetching top videos by views ({start_date_28} ~ {end_date_28})...")
-                top_views_videos = yt_analytics.get_top_videos_by_views(start_date_28, end_date_28)
-                print(f"Fetching top videos by likes ({start_date_28} ~ {end_date_28})...")
-                top_likes_videos = yt_analytics.get_top_videos_by_likes(start_date_28, end_date_28)
+                print(f"Fetching top videos data ({start_date_28} ~ {end_date_28})...")
+                top_views_videos, top_likes_videos = yt_analytics.get_top_videos(start_date_28, end_date_28)
             except Exception as oauth_err:
                 print(f"Warning: Failed to fetch analytics data: {oauth_err}")
                 print("Proceeding without video ranking data.")

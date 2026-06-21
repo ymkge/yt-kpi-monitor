@@ -35,11 +35,13 @@ class GeminiClient:
 """
         max_retries = 3
         retry_delay = 10  # 429エラー時の初回待機時間（秒）
+        # 環境変数からモデル名を取得し、未設定の場合は推奨版のgemini-3.5-flashをデフォルトにする
+        model_name = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
 
         for attempt in range(max_retries):
             try:
                 response = self.client.models.generate_content(
-                    model="gemini-2.0-flash",
+                    model=model_name,
                     contents=prompt,
                     config=types.GenerateContentConfig(
                         temperature=0.7,

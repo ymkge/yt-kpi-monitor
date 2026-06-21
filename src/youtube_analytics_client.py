@@ -51,10 +51,13 @@ class YouTubeAnalyticsClient:
                 titles[item["id"]] = item["snippet"]["title"]
         return titles
 
-    def get_top_videos_by_views(self, start_date_str, end_date_str, max_results=3):
+    def get_top_videos(self, start_date_str, end_date_str, max_results=3):
         """
-        指定期間内で再生数（views）が多い上位動画を取得する。
+        指定期間内の動画データを取得し、再生数上位と高評価数上位の動画リストを返す。
+        API側の制限（sortパラメータの制限など）を回避するため、
+        再生数順で多めにデータを取得した後にPython側でソートとフィルタリングを行います。
         """
+        # APIからは最も基本的な「再生数による降順ソート」で多めに取得する
         request = self.analytics.reports().query(
             ids="channel==MINE",
             startDate=start_date_str,
@@ -62,61 +65,42 @@ class YouTubeAnalyticsClient:
             metrics="views,likes",
             dimensions="video",
             sort="-views",
-            maxResults=max_results
+            maxResults=30  # ランキング候補として十分な件数を取得
         )
         response = request.execute()
 
         rows = response.get("rows", [])
         if not rows:
-            return []
+            return [], []
 
-        video_ids = [row[0] for row in rows]
-        titles = self._get_video_titles(video_ids)
-
-        result = []
+        # 取得したデータを一旦パース
+        parsed_videos = []
         for row in rows:
             video_id = row[0]
-            views = int(row[1])
+            views = int(row[1]) if row[1] is not None else 0
             likes = int(row[2]) if row[2] is not None else 0
-            result.append({
+            parsed_videos.append({
                 "video_id": video_id,
-                "title": titles.get(video_id, "不明な動画"),
                 "views": views,
                 "likes": likes
             })
-        return result
 
-    def get_top_videos_by_likes(self, start_date_str, end_date_str, max_results=3):
-        """
-        指定期間内で高評価数（likes）が多い上位動画を取得する。
-        """
-        request = self.analytics.reports().query(
-            ids="channel==MINE",
-            startDate=start_date_str,
-            endDate=end_date_str,
-            metrics="views,likes",
-            dimensions="video",
-            sort="-likes",
-            maxResults=max_results
-        )
-        response = request.execute()
+        # 再生数ランキング（views 降順）
+        views_sorted = sorted(parsed_videos, key=lambda x: x["views"], reverse=True)[:max_results]
+        
+        # 高評価数ランキング（likes 降順）
+        likes_sorted = sorted(parsed_videos, key=lambda x: x["likes"], reverse=True)[:max_results]
 
-        rows = response.get("rows", [])
-        if not rows:
-            return []
+        # タイトルを一括取得するための動画IDを収集
+        unique_video_ids = list(set(
+            [v["video_id"] for v in views_sorted] + [v["video_id"] for v in likes_sorted]
+        ))
+        titles = self._get_video_titles(unique_video_ids)
 
-        video_ids = [row[0] for row in rows]
-        titles = self._get_video_titles(video_ids)
+        # 各リストにタイトルを適用
+        for v in views_sorted:
+            v["title"] = titles.get(v["video_id"], "不明な動画")
+        for v in likes_sorted:
+            v["title"] = titles.get(v["video_id"], "不明な動画")
 
-        result = []
-        for row in rows:
-            video_id = row[0]
-            views = int(row[1])
-            likes = int(row[2]) if row[2] is not None else 0
-            result.append({
-                "video_id": video_id,
-                "title": titles.get(video_id, "不明な動画"),
-                "views": views,
-                "likes": likes
-            })
-        return result
+        return views_sorted, likes_sorted
