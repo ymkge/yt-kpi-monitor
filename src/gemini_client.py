@@ -35,8 +35,8 @@ class GeminiClient:
 """
         max_retries = 3
         retry_delay = 10  # 429エラー時の初回待機時間（秒）
-        # 環境変数からモデル名を取得し、未設定の場合は推奨版のgemini-3.5-flashをデフォルトにする
-        model_name = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+        # 環境変数からモデル名を取得し、未設定または空文字列の場合は推奨版のgemini-3.5-flashをデフォルトにする
+        model_name = os.getenv("GEMINI_MODEL") or "gemini-3.5-flash"
 
         for attempt in range(max_retries):
             try:
