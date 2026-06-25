@@ -5,16 +5,21 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class SlackClient:
-    def __init__(self, webhook_url=None):
+    def __init__(self, webhook_url=None, bot_token=None, channel=None):
         self.webhook_url = webhook_url or os.getenv("SLACK_WEBHOOK_URL")
-        if not self.webhook_url:
-            raise ValueError("SLACK_WEBHOOK_URL is not set.")
+        self.bot_token = bot_token or os.getenv("SLACK_BOT_TOKEN")
+        self.channel = channel or os.getenv("SLACK_CHANNEL")
+        
+        if not all([self.bot_token, self.channel]) and not self.webhook_url:
+            raise ValueError("Either (SLACK_BOT_TOKEN and SLACK_CHANNEL) or SLACK_WEBHOOK_URL must be set.")
 
     def send_kpi_alert(self, current_kpi, previous_kpi=None, recent_videos_kpis=None):
         """
         KPIの増分を含めたSlackアラートを送信する。
+        Bot Tokenが利用可能な場合は、親メッセージ(Block Kit)を送信し、スレID(ts)を返す。
         """
         channel_title = current_kpi["channel_title"]
+        from datetime import datetime
         
         def format_diff(curr, prev):
             if prev is None:
@@ -27,86 +32,232 @@ class SlackClient:
         view_text = format_diff(current_kpi["view_count"], previous_kpi.get("view_count") if previous_kpi else None)
         like_text = format_diff(current_kpi["total_like_count"], previous_kpi.get("total_like_count") if previous_kpi else None)
 
-        attachments = [
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+        # 1. Block Kit による親メッセージサマリーの構築
+        blocks = [
             {
-                "color": "#36a64f",
+                "type": "header",
+                "text": {
+                    "type": "plain_text",
+                    "text": "📊 YouTube KPI デイリーレポート",
+                    "emoji": True
+                }
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*チャンネル*: `{channel_title}`\n*計測日時*: {now_str} (JST)"
+                }
+            },
+            {
+                "type": "divider"
+            },
+            {
+                "type": "section",
                 "fields": [
-                    {"title": "登録者数", "value": sub_text, "short": True},
-                    {"title": "再生数", "value": view_text, "short": True},
-                    {"title": "いいね数", "value": like_text, "short": True},
+                    {
+                        "type": "mrkdwn",
+                        "text": f"*👥 登録者数*\n{sub_text}"
+                    },
+                    {
+                        "type": "mrkdwn",
+                        "text": f"*👁️ 再生数*\n{view_text}"
+                    },
+                    {
+                        "type": "mrkdwn",
+                        "text": f"*👍 いいね数*\n{like_text}"
+                    }
                 ]
+            },
+            {
+                "type": "divider"
             }
         ]
 
-        if recent_videos_kpis:
-            # 直近動画セクションのヘッダーを追加
-            attachments.append({
-                "title": "🆕 直近14日以内に公開された動画のパフォーマンス",
-                "color": "#4385f4",
-                "text": "以下は直近14日間に公開された動画の現在のステータスです。"
-            })
+        # 2. 送信方法の判別（Bot Token優先、Webhookフォールバック）
+        use_bot = all([self.bot_token, self.channel])
 
-            for idx, video in enumerate(recent_videos_kpis, 1):
-                metrics = video["metrics"]
-                
-                # 平均視聴時間 (0秒またはNoneの場合は集計中とする)
-                avg_sec = metrics.get("average_view_duration")
-                if avg_sec is not None and avg_sec > 0:
-                    m, s = divmod(avg_sec, 60)
-                    duration_text = f"{m}分{s}秒" if m > 0 else f"{s}秒"
-                else:
-                    duration_text = "集計中"
-
-                # 登録者増分
-                sub_gained = metrics.get("subscribers_gained")
-                sub_gained_text = f"+{sub_gained:,}" if sub_gained is not None else "集計中"
-
-                # Premium視聴回数
-                red_views = metrics.get("red_views")
-                red_views_text = f"Premium: {red_views:,} 回" if red_views is not None else "Premium: 集計中"
-
-                # インプレッション数・CTRの文字列整形
-                impressions = metrics.get("impressions")
-                ctr = metrics.get("ctr")
-                
-                if impressions is not None and impressions > 0:
-                    impressions_text = f"{impressions:,} 回"
-                    ctr_text = f"{ctr:.2f}%"
-                else:
-                    impressions_text = "集計中 またはデータなし"
-                    ctr_text = "集計中"
-
-                pub_time = video["published_at"].replace("T", " ").replace("Z", "")[:16]
-
-                video_text = (
-                    f"📅 *公開日時*: {pub_time} (UTC)\n"
-                    f"👁️ *再生数*: {metrics.get('views', 0):,} 回 ({red_views_text})\n"
-                    f"👍 *いいね数*: {metrics.get('likes', 0):,}  /  👥 *登録者増*: {sub_gained_text}\n"
-                    f"⏱️ *平均視聴時間*: {duration_text}\n"
-                    f"📢 *インプレッション数*: {impressions_text}\n"
-                    f"🎯 *クリック率 (CTR)*: {ctr_text}"
-                )
-
-                attachments.append({
-                    "title": f"🎬 {idx}. {video['title']}",
-                    "color": "#70a1ff" if idx % 2 == 0 else "#1e90ff",
-                    "text": video_text,
-                    "mrkdwn_in": ["text"]
+        if use_bot:
+            try:
+                # Bot Tokenを利用して親メッセージを送信
+                blocks.append({
+                    "type": "context",
+                    "elements": [
+                        {
+                            "type": "mrkdwn",
+                            "text": "💬 *直近14日以内に公開された動画の詳細KPIは、このメッセージのスレッドに投稿されています。*"
+                        }
+                    ]
                 })
 
-            # 注記を独立したアタッチメントとして末尾に追加
-            attachments.append({
-                "color": "#a4b0be",
-                "footer": "※インプレッション数・CTRはReporting APIの仕様上、通常2〜3日前のデータが最新となります。その他の指標は通常1〜2日前のデータが最新です。"
-            })
+                headers = {
+                    "Authorization": f"Bearer {self.bot_token}",
+                    "Content-Type": "application/json; charset=utf-8"
+                }
+                payload = {
+                    "channel": self.channel,
+                    "blocks": blocks,
+                    "text": f"📊 YouTube KPI デイリーレポート: {channel_title}"
+                }
+                
+                response = requests.post(
+                    "https://slack.com/api/chat.postMessage",
+                    headers=headers,
+                    json=payload
+                )
+                response.raise_for_status()
+                res_json = response.json()
+                if not res_json.get("ok"):
+                    raise ValueError(f"Slack API error: {res_json.get('error')}")
+                
+                # 親メッセージのタイムスタンプ(ts)を返却
+                return res_json.get("ts")
+            except Exception as bot_err:
+                print(f"Warning: Bot Token sending failed ({bot_err}). Falling back to Webhook...")
+                use_bot = False
 
-        payload = {
-            "text": f"📊 *YouTube KPI Daily Alert: {channel_title}*",
-            "attachments": attachments
+        if not use_bot:
+            # Webhookによるフォールバック送信 (地続きで動画アタッチメントも結合)
+            # アタッチメントの構築
+            attachments = []
+            if recent_videos_kpis:
+                for idx, video in enumerate(recent_videos_kpis, 1):
+                    metrics = video["metrics"]
+                    
+                    avg_sec = metrics.get("average_view_duration")
+                    if avg_sec is not None and avg_sec > 0:
+                        m, s = divmod(avg_sec, 60)
+                        duration_text = f"{m}分{s}秒" if m > 0 else f"{s}秒"
+                    else:
+                        duration_text = "集計中"
+
+                    sub_gained = metrics.get("subscribers_gained")
+                    sub_gained_text = f"+{sub_gained:,}" if sub_gained is not None else "集計中"
+
+                    red_views = metrics.get("red_views")
+                    red_views_text = f"Premium: {red_views:,} 回" if red_views is not None else "Premium: 集計中"
+
+                    impressions = metrics.get("impressions")
+                    ctr = metrics.get("ctr")
+                    
+                    if impressions is not None and impressions > 0:
+                        impressions_text = f"{impressions:,} 回"
+                        ctr_text = f"{ctr:.2f}%"
+                    else:
+                        impressions_text = "集計中 またはデータなし"
+                        ctr_text = "集計中"
+
+                    pub_time = video["published_at"].replace("T", " ").replace("Z", "")[:16]
+
+                    video_text = (
+                        f"📅 *公開日時*: {pub_time} (UTC)\n"
+                        f"👁️ *再生数*: {metrics.get('views', 0):,} 回 ({red_views_text})\n"
+                        f"👍 *いいね数*: {metrics.get('likes', 0):,}  /  👥 *登録者増*: {sub_gained_text}\n"
+                        f"⏱️ *平均視聴時間*: {duration_text}\n"
+                        f"📢 *インプレッション数*: {impressions_text}\n"
+                        f"🎯 *クリック率 (CTR)*: {ctr_text}"
+                    )
+
+                    attachments.append({
+                        "title": f"🎬 {idx}. {video['title']}",
+                        "color": "#70a1ff" if idx % 2 == 0 else "#1e90ff",
+                        "text": video_text,
+                        "mrkdwn_in": ["text"]
+                    })
+
+                attachments.append({
+                    "color": "#a4b0be",
+                    "footer": "※インプレッション数・CTRはReporting APIの仕様上、通常2〜3日前のデータが最新となります。その他の指標は通常1〜2日前のデータが最新です。"
+                })
+
+            payload = {
+                "text": f"📊 *YouTube KPI Daily Alert: {channel_title}*",
+                "blocks": blocks,
+                "attachments": attachments
+            }
+            response = requests.post(self.webhook_url, json=payload)
+            response.raise_for_status()
+            return None
+
+    def send_recent_video_kpis_to_thread(self, thread_ts, recent_videos_kpis):
+        """
+        直近動画のKPI一覧を、指定された親メッセージのスレッドに投稿する。
+        """
+        if not self.bot_token or not self.channel or not recent_videos_kpis:
+            return
+
+        headers = {
+            "Authorization": f"Bearer {self.bot_token}",
+            "Content-Type": "application/json; charset=utf-8"
         }
 
-        response = requests.post(self.webhook_url, json=payload)
+        attachments = []
+        for idx, video in enumerate(recent_videos_kpis, 1):
+            metrics = video["metrics"]
+            
+            avg_sec = metrics.get("average_view_duration")
+            if avg_sec is not None and avg_sec > 0:
+                m, s = divmod(avg_sec, 60)
+                duration_text = f"{m}分{s}秒" if m > 0 else f"{s}秒"
+            else:
+                duration_text = "集計中"
+
+            sub_gained = metrics.get("subscribers_gained")
+            sub_gained_text = f"+{sub_gained:,}" if sub_gained is not None else "集計中"
+
+            red_views = metrics.get("red_views")
+            red_views_text = f"Premium: {red_views:,} 回" if red_views is not None else "Premium: 集計中"
+
+            impressions = metrics.get("impressions")
+            ctr = metrics.get("ctr")
+            
+            if impressions is not None and impressions > 0:
+                impressions_text = f"{impressions:,} 回"
+                ctr_text = f"{ctr:.2f}%"
+            else:
+                impressions_text = "集計中 またはデータなし"
+                ctr_text = "集計中"
+
+            pub_time = video["published_at"].replace("T", " ").replace("Z", "")[:16]
+
+            video_text = (
+                f"📅 *公開日時*: {pub_time} (UTC)\n"
+                f"👁️ *再生数*: {metrics.get('views', 0):,} 回 ({red_views_text})\n"
+                f"👍 *いいね数*: {metrics.get('likes', 0):,}  /  👥 *登録者増*: {sub_gained_text}\n"
+                f"⏱️ *平均視聴時間*: {duration_text}\n"
+                f"📢 *インプレッション数*: {impressions_text}\n"
+                f"🎯 *クリック率 (CTR)*: {ctr_text}"
+            )
+
+            attachments.append({
+                "title": f"🎬 {idx}. {video['title']}",
+                "color": "#70a1ff" if idx % 2 == 0 else "#1e90ff",
+                "text": video_text,
+                "mrkdwn_in": ["text"]
+            })
+
+        attachments.append({
+            "color": "#a4b0be",
+            "footer": "※インプレッション数・CTRはReporting APIの仕様上、通常2〜3日前のデータが最新となります。その他の指標は通常1〜2日前のデータが最新です。"
+        })
+
+        payload = {
+            "channel": self.channel,
+            "thread_ts": thread_ts,
+            "attachments": attachments
+        }
+        
+        response = requests.post(
+            "https://slack.com/api/chat.postMessage",
+            headers=headers,
+            json=payload
+        )
         response.raise_for_status()
+        res_json = response.json()
+        if not res_json.get("ok"):
+            raise ValueError(f"Slack API error: {res_json.get('error')}")
 
     def send_weekly_report(self, summary_data, advice_text, top_views_videos=None, top_likes_videos=None):
         """

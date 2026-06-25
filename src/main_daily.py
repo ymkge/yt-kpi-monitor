@@ -115,7 +115,11 @@ def main():
 
         # 5. Slack通知
         print("Sending Slack alert...")
-        slack.send_kpi_alert(current_kpi, previous_kpi, recent_videos_kpis if recent_videos_kpis else None)
+        thread_ts = slack.send_kpi_alert(current_kpi, previous_kpi, recent_videos_kpis if recent_videos_kpis else None)
+        
+        if thread_ts and recent_videos_kpis:
+            print("Sending recent video KPIs to the thread...")
+            slack.send_recent_video_kpis_to_thread(thread_ts, recent_videos_kpis)
 
         print("Daily KPI Monitor completed successfully.")
 
