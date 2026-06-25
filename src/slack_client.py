@@ -10,7 +10,7 @@ class SlackClient:
         if not self.webhook_url:
             raise ValueError("SLACK_WEBHOOK_URL is not set.")
 
-    def send_kpi_alert(self, current_kpi, previous_kpi=None):
+    def send_kpi_alert(self, current_kpi, previous_kpi=None, recent_videos_kpis=None):
         """
         KPIの増分を含めたSlackアラートを送信する。
         """
@@ -27,18 +27,62 @@ class SlackClient:
         view_text = format_diff(current_kpi["view_count"], previous_kpi.get("view_count") if previous_kpi else None)
         like_text = format_diff(current_kpi["total_like_count"], previous_kpi.get("total_like_count") if previous_kpi else None)
 
+        attachments = [
+            {
+                "color": "#36a64f",
+                "fields": [
+                    {"title": "登録者数", "value": sub_text, "short": True},
+                    {"title": "再生数", "value": view_text, "short": True},
+                    {"title": "いいね数", "value": like_text, "short": True},
+                ]
+            }
+        ]
+
+        if recent_videos_kpis:
+            video_fields = []
+            for video in recent_videos_kpis:
+                # 平均視聴時間を「分秒」に変換
+                avg_sec = video["metrics"].get("average_view_duration", 0)
+                m, s = divmod(avg_sec, 60)
+                duration_text = f"{m}分{s}秒" if m > 0 else f"{s}秒"
+
+                # インプレッション数・CTRの文字列整形
+                impressions = video["metrics"].get("impressions")
+                ctr = video["metrics"].get("ctr")
+                
+                if impressions is not None and impressions > 0:
+                    impressions_text = f"{impressions:,} 回"
+                    ctr_text = f"{ctr:.2f}%"
+                else:
+                    impressions_text = "集計中 またはデータなし"
+                    ctr_text = "集計中"
+
+                pub_time = video["published_at"].replace("T", " ").replace("Z", "")[:16]
+
+                video_text = (
+                    f"📅 公開日時: {pub_time} (UTC)\n"
+                    f"👁️ 再生数: {video['metrics'].get('views', 0):,} 回 (Premium: {video['metrics'].get('red_views', 0):,} 回)\n"
+                    f"👍 いいね数: {video['metrics'].get('likes', 0):,} / 👥 登録者増: +{video['metrics'].get('subscribers_gained', 0):,}\n"
+                    f"⏱️ 平均視聴時間: {duration_text}\n"
+                    f"📢 インプレッション数: {impressions_text}\n"
+                    f"🎯 クリック率 (CTR): {ctr_text}\n"
+                )
+                video_fields.append({
+                    "title": f"🎬 {video['title']}",
+                    "value": video_text,
+                    "short": False
+                })
+
+            attachments.append({
+                "title": "🆕 直近14日以内に公開された動画のパフォーマンス",
+                "color": "#4385f4",
+                "fields": video_fields,
+                "footer": "※インプレッション数・CTRはReporting APIの仕様上、通常2〜3日前のデータが最新となります。その他の指標は通常1〜2日前のデータが最新です。"
+            })
+
         payload = {
             "text": f"📊 *YouTube KPI Daily Alert: {channel_title}*",
-            "attachments": [
-                {
-                    "color": "#36a64f",
-                    "fields": [
-                        {"title": "登録者数", "value": sub_text, "short": True},
-                        {"title": "再生数", "value": view_text, "short": True},
-                        {"title": "いいね数", "value": like_text, "short": True},
-                    ]
-                }
-            ]
+            "attachments": attachments
         }
 
         response = requests.post(self.webhook_url, json=payload)

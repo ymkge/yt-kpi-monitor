@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timezone, timedelta
 from googleapiclient.discovery import build
 from dotenv import load_dotenv
 
@@ -10,6 +11,51 @@ class YouTubeClient:
         if not self.api_key:
             raise ValueError("YOUTUBE_API_KEY is not set.")
         self.youtube = build("youtube", "v3", developerKey=self.api_key)
+
+    def get_recent_videos(self, channel_id, max_days=14):
+        """
+        指定したチャンネルで、直近 max_days 日以内に公開された動画のリストを取得する。
+        """
+        # チャンネルのアップロード動画リストIDを取得
+        request = self.youtube.channels().list(
+            part="contentDetails",
+            id=channel_id
+        )
+        response = request.execute()
+        if not response.get("items"):
+            return []
+        
+        uploads_playlist_id = response["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
+        
+        recent_videos = []
+        now_utc = datetime.now(timezone.utc)
+        
+        playlist_request = self.youtube.playlistItems().list(
+            part="snippet,contentDetails",
+            playlistId=uploads_playlist_id,
+            maxResults=50
+        )
+        playlist_response = playlist_request.execute()
+        
+        for item in playlist_response.get("items", []):
+            snippet = item.get("snippet", {})
+            video_id = item.get("contentDetails", {}).get("videoId")
+            published_at_str = snippet.get("publishedAt")
+            
+            if not video_id or not published_at_str:
+                continue
+                
+            # ISO 8601 形式のUTC日時をパース
+            published_at = datetime.fromisoformat(published_at_str.replace("Z", "+00:00"))
+            
+            if now_utc - published_at <= timedelta(days=max_days):
+                recent_videos.append({
+                    "video_id": video_id,
+                    "title": snippet.get("title", "不明な動画"),
+                    "published_at": published_at_str
+                })
+                
+        return recent_videos
 
     def get_channel_stats(self, channel_id):
         """
