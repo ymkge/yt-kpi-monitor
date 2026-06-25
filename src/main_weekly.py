@@ -1,6 +1,8 @@
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+JST = timezone(timedelta(hours=9))
 from dotenv import load_dotenv
 from src.bigquery_client import BigQueryClient
 from src.gemini_client import GeminiClient
@@ -31,7 +33,7 @@ def main():
 
         # 2. YouTube Analytics APIから詳細指標（動画ランキングなど）を取得
         # 直近28日間の日付範囲を計算
-        today = datetime.now()
+        today = datetime.now(JST)
         start_date_28 = (today - timedelta(days=28)).strftime("%Y-%m-%d")
         end_date_28 = (today - timedelta(days=1)).strftime("%Y-%m-%d")
 

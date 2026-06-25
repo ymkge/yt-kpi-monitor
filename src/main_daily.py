@@ -64,9 +64,11 @@ def main():
                     
                     video_ids = [v["video_id"] for v in recent_videos]
                     
-                    from datetime import datetime, timedelta
-                    start_date = (datetime.now() - timedelta(days=14)).strftime("%Y-%m-%d")
-                    end_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+                    from datetime import datetime, timedelta, timezone
+                    JST = timezone(timedelta(hours=9))
+                    now_jst = datetime.now(JST)
+                    start_date = (now_jst - timedelta(days=14)).strftime("%Y-%m-%d")
+                    end_date = (now_jst - timedelta(days=1)).strftime("%Y-%m-%d")
                     
                     print(f"Fetching video metrics from Analytics API ({start_date} ~ {end_date})...")
                     metrics_data = yt_analytics.get_video_metrics(video_ids, start_date, end_date)

@@ -1,9 +1,11 @@
 import os
 from google.cloud import bigquery
 from dotenv import load_dotenv
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 load_dotenv()
+
+JST = timezone(timedelta(hours=9))
 
 class BigQueryClient:
     def __init__(self, project_id=None, dataset_id=None):
@@ -22,7 +24,7 @@ class BigQueryClient:
         table_id = f"{self.project_id}.{self.dataset_id}.channel_kpis"
         
         # 保存するデータの整形
-        now = datetime.now()
+        now = datetime.now(JST)
         row = {
             "dt": now.strftime("%Y-%m-%d"),
             "channel_id": kpi_data["channel_id"],
@@ -59,7 +61,7 @@ class BigQueryClient:
         指定したチャンネルの、今日より前の最新KPIデータを取得する。
         """
         if not today_str:
-            today_str = datetime.now().strftime("%Y-%m-%d")
+            today_str = datetime.now(JST).strftime("%Y-%m-%d")
             
         sql_path = os.path.join("config", "query", "fetch_previous_kpi.sql")
         with open(sql_path, "r") as f:
@@ -87,7 +89,7 @@ class BigQueryClient:
         直近1週間のKPIサマリを取得する。
         """
         if not today_str:
-            today_str = datetime.now().strftime("%Y-%m-%d")
+            today_str = datetime.now(JST).strftime("%Y-%m-%d")
             
         sql_path = os.path.join("config", "query", "aggregate_weekly_summary.sql")
         with open(sql_path, "r") as f:

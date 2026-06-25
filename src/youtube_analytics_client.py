@@ -225,8 +225,13 @@ class YouTubeAnalyticsClient:
                 response = requests.get(download_url, headers=headers)
                 response.raise_for_status()
 
-                # GZIP 展開と CSV パース
-                with gzip.open(io.BytesIO(response.content), "rt", encoding="utf-8") as f:
+                # GZIP 展開またはプレーンテキストとして CSV パース
+                if response.content.startswith(b'\x1f\x8b'):
+                    f = gzip.open(io.BytesIO(response.content), "rt", encoding="utf-8")
+                else:
+                    f = io.StringIO(response.content.decode("utf-8"))
+
+                with f:
                     reader = csv.DictReader(f)
                     for row in reader:
                         v_id = row.get("video_id")

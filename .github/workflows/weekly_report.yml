@@ -5,6 +5,9 @@ on:
     - cron: '0 15 * * 0' # UTC 15:00 Sunday is JST 0:00 Monday
   workflow_dispatch:
 
+env:
+  TZ: Asia/Tokyo
+
 jobs:
   report:
     runs-on: ubuntu-latest

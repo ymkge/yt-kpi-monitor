@@ -19,7 +19,8 @@ class SlackClient:
         Bot Tokenが利用可能な場合は、親メッセージ(Block Kit)を送信し、スレID(ts)を返す。
         """
         channel_title = current_kpi["channel_title"]
-        from datetime import datetime
+        from datetime import datetime, timezone, timedelta
+        JST = timezone(timedelta(hours=9))
         
         def format_diff(curr, prev):
             if prev is None:
@@ -32,7 +33,7 @@ class SlackClient:
         view_text = format_diff(current_kpi["view_count"], previous_kpi.get("view_count") if previous_kpi else None)
         like_text = format_diff(current_kpi["total_like_count"], previous_kpi.get("total_like_count") if previous_kpi else None)
 
-        now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+        now_str = datetime.now(JST).strftime("%Y-%m-%d %H:%M")
 
         # 1. Block Kit による親メッセージサマリーの構築
         blocks = [
