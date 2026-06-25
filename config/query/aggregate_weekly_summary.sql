@@ -1,5 +1,6 @@
 SELECT
     channel_id,
+    MAX(channel_title) AS channel_title,
     MIN(dt) AS start_date,
     MAX(dt) AS end_date,
     MAX(subscriber_count) - MIN(subscriber_count) AS subscriber_growth,
