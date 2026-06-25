@@ -26,12 +26,21 @@ class GeminiClient:
 {kpi_summary_text}
 
 # 出力形式
-1. **全体サマリ**: 現状のパフォーマンスを1文で。
-2. **良かった点**: 数値の伸びやポジティブな傾向を2-3点。
-3. **改善が必要な点**: 課題や注意すべき数値を1-2点。
-4. **翌週に向けた具体的なアクション案**: コンテンツ制作や運用面での提案を3点。
+前置きや結びの挨拶は一切含めず、以下の4つのセクションのみをSlackで読みやすいフォーマット（Markdown）で出力してください。
 
-回答は簡潔かつデータに基づいた具体的な内容にしてください。
+1. **全体サマリ**
+   - 現状のパフォーマンスの要約を1文（50文字以内）で記載してください。
+2. **良かった点（2点）**
+   - 数値の伸びやポジティブな傾向を、具体的なデータ根拠と共に1項目あたり1〜2行で簡潔に記載してください。
+3. **改善が必要な点（1〜2点）**
+   - 課題や注意すべき数値を、具体的なデータ根拠と共に1項目あたり1〜2行で簡潔に記載してください。
+4. **翌週に向けた具体的なアクション案（3点）**
+   - コンテンツ制作や運用面での提案を、実行可能かつ具体的な内容で、1項目あたり1〜2行で簡潔に記載してください。
+
+# 制約事項
+- 出力は指定された4つのセクションのみとし、その他の導入文やまとめの言葉は絶対に含めないでください。
+- 箇条書きの各項目は、最大でも2行以内に収めるように簡潔に要約してください。
+- 抽象的なアドバイスは避け、データに基づいた実践的な内容にしてください。
 """
         max_retries = 3
         retry_delay = 10  # 429エラー時の初回待機時間（秒）
@@ -49,9 +58,9 @@ class GeminiClient:
                 )
                 return response.text
             except APIError as e:
-                # 429 RESOURCE_EXHAUSTED のエラーハンドリング
-                if e.code == 429 and attempt < max_retries - 1:
-                    print(f"Gemini API rate limit exceeded (429). Retrying in {retry_delay}s... (Attempt {attempt + 1}/{max_retries})")
+                # 一時的なAPIエラー（429:クォータ超過, 503:一時的利用不可, 504:タイムアウト）に対するリトライ
+                if e.code in [429, 503, 504] and attempt < max_retries - 1:
+                    print(f"Gemini API error ({e.code}). Retrying in {retry_delay}s... (Attempt {attempt + 1}/{max_retries})")
                     time.sleep(retry_delay)
                     retry_delay *= 2  # 指数バックオフ
                 else:
