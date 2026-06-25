@@ -41,14 +41,27 @@ class SlackClient:
         if recent_videos_kpis:
             video_fields = []
             for video in recent_videos_kpis:
-                # 平均視聴時間を「分秒」に変換
-                avg_sec = video["metrics"].get("average_view_duration", 0)
-                m, s = divmod(avg_sec, 60)
-                duration_text = f"{m}分{s}秒" if m > 0 else f"{s}秒"
+                metrics = video["metrics"]
+                
+                # 平均視聴時間
+                avg_sec = metrics.get("average_view_duration")
+                if avg_sec is not None:
+                    m, s = divmod(avg_sec, 60)
+                    duration_text = f"{m}分{s}秒" if m > 0 else f"{s}秒"
+                else:
+                    duration_text = "集計中"
+
+                # 登録者増分
+                sub_gained = metrics.get("subscribers_gained")
+                sub_gained_text = f"+{sub_gained:,}" if sub_gained is not None else "集計中"
+
+                # Premium視聴回数
+                red_views = metrics.get("red_views")
+                red_views_text = f"Premium: {red_views:,} 回" if red_views is not None else "Premium: 集計中"
 
                 # インプレッション数・CTRの文字列整形
-                impressions = video["metrics"].get("impressions")
-                ctr = video["metrics"].get("ctr")
+                impressions = metrics.get("impressions")
+                ctr = metrics.get("ctr")
                 
                 if impressions is not None and impressions > 0:
                     impressions_text = f"{impressions:,} 回"
@@ -61,8 +74,8 @@ class SlackClient:
 
                 video_text = (
                     f"📅 公開日時: {pub_time} (UTC)\n"
-                    f"👁️ 再生数: {video['metrics'].get('views', 0):,} 回 (Premium: {video['metrics'].get('red_views', 0):,} 回)\n"
-                    f"👍 いいね数: {video['metrics'].get('likes', 0):,} / 👥 登録者増: +{video['metrics'].get('subscribers_gained', 0):,}\n"
+                    f"👁️ 再生数: {metrics.get('views', 0):,} 回 ({red_views_text})\n"
+                    f"👍 いいね数: {metrics.get('likes', 0):,} / 👥 登録者増: {sub_gained_text}\n"
                     f"⏱️ 平均視聴時間: {duration_text}\n"
                     f"📢 インプレッション数: {impressions_text}\n"
                     f"🎯 クリック率 (CTR): {ctr_text}\n"

@@ -15,8 +15,9 @@ class YouTubeClient:
     def get_recent_videos(self, channel_id, max_days=14):
         """
         指定したチャンネルで、直近 max_days 日以内に公開された動画のリストを取得する。
+        リアルタイムの視聴回数といいね数も合わせて取得する。
         """
-        # チャンネルのアップロード動画リストIDを取得
+        # 1. チャンネルのアップロード動画リストIDを取得
         request = self.youtube.channels().list(
             part="contentDetails",
             id=channel_id
@@ -27,15 +28,17 @@ class YouTubeClient:
         
         uploads_playlist_id = response["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
         
-        recent_videos = []
-        now_utc = datetime.now(timezone.utc)
-        
+        # 2. 直近のプレイリスト項目を取得
         playlist_request = self.youtube.playlistItems().list(
             part="snippet,contentDetails",
             playlistId=uploads_playlist_id,
             maxResults=50
         )
         playlist_response = playlist_request.execute()
+        
+        raw_videos = []
+        video_ids = []
+        now_utc = datetime.now(timezone.utc)
         
         for item in playlist_response.get("items", []):
             snippet = item.get("snippet", {})
@@ -49,12 +52,45 @@ class YouTubeClient:
             published_at = datetime.fromisoformat(published_at_str.replace("Z", "+00:00"))
             
             if now_utc - published_at <= timedelta(days=max_days):
-                recent_videos.append({
+                raw_videos.append({
                     "video_id": video_id,
                     "title": snippet.get("title", "不明な動画"),
                     "published_at": published_at_str
                 })
+                video_ids.append(video_id)
                 
+        if not raw_videos:
+            return []
+
+        # 3. videos().list を使ってリアルタイムの再生数といいね数を一括取得
+        realtime_stats = {}
+        for i in range(0, len(video_ids), 50):
+            chunk_ids = video_ids[i:i+50]
+            video_request = self.youtube.videos().list(
+                part="statistics",
+                id=",".join(chunk_ids)
+            )
+            video_response = video_request.execute()
+            for item in video_response.get("items", []):
+                v_id = item["id"]
+                stats = item.get("statistics", {})
+                realtime_stats[v_id] = {
+                    "views": int(stats.get("viewCount", 0)),
+                    "likes": int(stats.get("likeCount", 0))
+                }
+
+        # 4. データをマージして返却
+        recent_videos = []
+        for v in raw_videos:
+            stats = realtime_stats.get(v["video_id"], {"views": 0, "likes": 0})
+            recent_videos.append({
+                "video_id": v["video_id"],
+                "title": v["title"],
+                "published_at": v["published_at"],
+                "realtime_views": stats["views"],
+                "realtime_likes": stats["likes"]
+            })
+            
         return recent_videos
 
     def get_channel_stats(self, channel_id):

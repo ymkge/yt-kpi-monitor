@@ -76,13 +76,28 @@ def main():
                     
                     for v in recent_videos:
                         v_id = v["video_id"]
-                        v_metrics = metrics_data.get(v_id, {
-                            "views": 0, "red_views": 0, "subscribers_gained": 0, "average_view_duration": 0, "likes": 0
-                        })
                         
-                        v_impr = impressions_data.get(v_id, {"impressions": 0, "ctr": 0.0})
-                        v_metrics["impressions"] = v_impr["impressions"]
-                        v_metrics["ctr"] = v_impr["ctr"]
+                        # Analytics API からデータが取得できているか確認
+                        analytics_reflected = v_id in metrics_data
+                        v_metrics = metrics_data.get(v_id, {})
+                        
+                        # リアルタイムの再生数といいね数をマージ
+                        v_metrics["views"] = v["realtime_views"]
+                        v_metrics["likes"] = v["realtime_likes"]
+                        
+                        # 遅延する指標は、データ未反映の場合は None とする
+                        v_metrics["red_views"] = v_metrics.get("red_views") if analytics_reflected else None
+                        v_metrics["subscribers_gained"] = v_metrics.get("subscribers_gained") if analytics_reflected else None
+                        v_metrics["average_view_duration"] = v_metrics.get("average_view_duration") if analytics_reflected else None
+                        
+                        # インプレッション・CTR（Reporting API）もデータがある場合のみマージ
+                        v_impr = impressions_data.get(v_id)
+                        if v_impr and v_impr.get("impressions", 0) > 0:
+                            v_metrics["impressions"] = v_impr["impressions"]
+                            v_metrics["ctr"] = v_impr["ctr"]
+                        else:
+                            v_metrics["impressions"] = None
+                            v_metrics["ctr"] = None
                         
                         recent_videos_kpis.append({
                             "video_id": v_id,
