@@ -99,7 +99,9 @@ class SlackClient:
                 payload = {
                     "channel": self.channel,
                     "blocks": blocks,
-                    "text": f"📊 YouTube KPI デイリーレポート: {channel_title}"
+                    "text": f"📊 YouTube KPI デイリーレポート: {channel_title}",
+                    "username": "クロBOT",
+                    "icon_emoji": ":kuro:"
                 }
                 
                 response = requests.post(
@@ -175,7 +177,9 @@ class SlackClient:
             payload = {
                 "text": f"📊 *YouTube KPI Daily Alert: {channel_title}*",
                 "blocks": blocks,
-                "attachments": attachments
+                "attachments": attachments,
+                "username": "クロBOT",
+                "icon_emoji": ":kuro:"
             }
             response = requests.post(self.webhook_url, json=payload)
             response.raise_for_status()
@@ -246,7 +250,9 @@ class SlackClient:
         payload = {
             "channel": self.channel,
             "thread_ts": thread_ts,
-            "attachments": attachments
+            "attachments": attachments,
+            "username": "クロBOT",
+            "icon_emoji": ":kuro:"
         }
         
         response = requests.post(
@@ -312,11 +318,35 @@ class SlackClient:
             "mrkdwn_in": ["text"]
         })
 
+        use_bot = all([self.bot_token, self.channel])
         payload = {
             "text": f"📅 *YouTube Weekly Strategy Report ({start_date} ~ {end_date})*",
-            "attachments": attachments
+            "attachments": attachments,
+            "username": "クロBOT",
+            "icon_emoji": ":kuro:"
         }
 
-        response = requests.post(self.webhook_url, json=payload)
-        response.raise_for_status()
+        if use_bot:
+            payload["channel"] = self.channel
+            headers = {
+                "Authorization": f"Bearer {self.bot_token}",
+                "Content-Type": "application/json; charset=utf-8"
+            }
+            try:
+                response = requests.post(
+                    "https://slack.com/api/chat.postMessage",
+                    headers=headers,
+                    json=payload
+                )
+                response.raise_for_status()
+                res_json = response.json()
+                if not res_json.get("ok"):
+                    raise ValueError(f"Slack API error: {res_json.get('error')}")
+            except Exception as bot_err:
+                print(f"Warning: Bot Token weekly report sending failed ({bot_err}). Falling back to Webhook...")
+                response = requests.post(self.webhook_url, json=payload)
+                response.raise_for_status()
+        else:
+            response = requests.post(self.webhook_url, json=payload)
+            response.raise_for_status()
 
