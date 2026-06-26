@@ -156,3 +156,5 @@ yt-kpi-monitor/
 - [ ] [改善]レポート作成用のLLMのモデルに関して汎用的な名称指定をする #34
   - おそらく、Gemini Flash Latest or Gemini Pro Latest のどちらかを指定しておくと、Google AI Studioでモデルが入れ替わっても最新のものを使い続けられると想定
   - これで動くかはテストして検証して確かめる必要あり。
+- [x] [改善]bigqueryへのレコードinsert時に1日一レコード保存されるようにして無駄なデータが入らないようにする #35
+  - 現状: python3 -m src.main_daily を実行するたびに毎回新しいレコードがインサートされる仕様→ insertは1日1回にする
