@@ -44,7 +44,7 @@ GitHub ActionsとGoogle Cloudを活用することで、完全無料枠（Free T
 | `GCP_DATASET_ID` | BigQuery データセット名 |
 | `GCP_SERVICE_ACCOUNT_KEY` | サービスアカウントのJSONキー内容すべて（改行含めそのまま） |
 | `GEMINI_API_KEY` | Google AI Studio のAPIキー |
-| `GEMINI_MODEL` | 使用するGeminiモデル名（任意、未指定時は `gemini-3.5-flash`） |
+| `GEMINI_MODEL` | 使用するGeminiモデル名（任意、未指定時は `gemini-flash-latest`。モデルの自動更新に伴い挙動が崩れる場合は、特定の静的モデル名を設定して固定することを推奨します） |
 | `SLACK_WEBHOOK_URL` | Slack Webhook URL |
 
 ### 3. YouTube Analytics API (OAuth2) セットアップ
@@ -153,7 +153,7 @@ yt-kpi-monitor/
 - [x] [改善]デイリーレポートに関して、登録者数、再生数、いいね数に関して増加数は前日のデータと比較して出力されるようにしたい #31
   - 現在、テストのために同日に複数回python3 -m src.main_dailyを実行すると、増加数が全て0になってしまう。この点を改善したい
 - [x] [改善]ウィークリレポートもデイリーと同じようにサマリ以外はスレッド内に投稿するように改善する #33
-- [ ] [改善]レポート作成用のLLMのモデルに関して汎用的な名称指定をする #34
+- [x] [改善]レポート作成用のLLMのモデルに関して汎用的な名称指定をする #34
   - おそらく、Gemini Flash Latest or Gemini Pro Latest のどちらかを指定しておくと、Google AI Studioでモデルが入れ替わっても最新のものを使い続けられると想定
   - これで動くかはテストして検証して確かめる必要あり。
 - [x] [改善]bigqueryへのレコードinsert時に1日一レコード保存されるようにして無駄なデータが入らないようにする #35
