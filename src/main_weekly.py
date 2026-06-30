@@ -57,11 +57,10 @@ def main():
                 print(f"Fetching top videos data ({start_date_28} ~ {end_date_28})...")
                 top_views_videos, top_likes_videos = yt_analytics.get_top_videos(start_date_28, end_date_28)
             except Exception as oauth_err:
-                print(f"Warning: Failed to fetch analytics data: {oauth_err}")
+                print(f"::warning::Failed to fetch analytics data: {oauth_err}")
                 print("Proceeding without video ranking data.")
         else:
-            print("Warning: YouTube Analytics OAuth credentials are not fully set.")
-            print("Skipping video ranking data.")
+            print("::warning::YouTube Analytics OAuth credentials are not fully set. Skipping video ranking data.")
 
         # 3. Geminiに送るテキストを整形
         kpi_summary_text = f"""

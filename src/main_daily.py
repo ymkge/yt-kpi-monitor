@@ -110,10 +110,10 @@ def main():
                 else:
                     print("No recent videos found in the last 14 days.")
             except Exception as e:
-                print(f"Warning: Failed to fetch recent video KPIs: {e}")
+                print(f"::warning::Failed to fetch recent video KPIs: {e}")
                 print("Proceeding without recent video KPI report.")
         else:
-            print("Warning: OAuth credentials are not fully set. Skipping recent video KPI report.")
+            print("::warning::OAuth credentials are not fully set. Skipping recent video KPI report.")
 
         # 5. Slack通知
         print("Sending Slack alert...")
