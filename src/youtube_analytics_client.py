@@ -29,9 +29,9 @@ class YouTubeAnalyticsClient:
         # アクセストークンの初回更新
         self.credentials.refresh(Request())
 
-        self.analytics = build("youtubeAnalytics", "v2", credentials=self.credentials)
-        self.youtube = build("youtube", "v3", credentials=self.credentials)
-        self.reporting = build("youtubeReporting", "v1", credentials=self.credentials)
+        self.analytics = build("youtubeAnalytics", "v2", credentials=self.credentials, static_discovery=False)
+        self.youtube = build("youtube", "v3", credentials=self.credentials, static_discovery=False)
+        self.reporting = build("youtubeReporting", "v1", credentials=self.credentials, static_discovery=False)
 
     def _get_video_titles(self, video_ids):
         """

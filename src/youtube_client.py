@@ -10,7 +10,7 @@ class YouTubeClient:
         self.api_key = api_key or os.getenv("YOUTUBE_API_KEY")
         if not self.api_key:
             raise ValueError("YOUTUBE_API_KEY is not set.")
-        self.youtube = build("youtube", "v3", developerKey=self.api_key)
+        self.youtube = build("youtube", "v3", developerKey=self.api_key, static_discovery=False)
 
     def get_recent_videos(self, channel_id, max_days=14):
         """
