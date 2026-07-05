@@ -425,3 +425,274 @@ class SlackClient:
             response = requests.post(self.webhook_url, json=payload)
             response.raise_for_status()
 
+    def send_monthly_report(self, summary_data, prev_summary_data, advice_text, traffic_sources=None, subscriber_views=None, top_videos_rankings=None, initial_performances=None, retentions=None, comment_analyses=None):
+        """
+        月次集計データと各種分析結果を含めたレポートを送信する。
+        数値サマリは親メッセージ(Block Kit)として送信し、
+        詳細な分析（動画ランキング、トラフィックソース、視聴維持率、Geminiアドバイス、コメント要約など）はスレッドに投稿する。
+        """
+        channel_title = summary_data.get("channel_title") or summary_data["channel_id"]
+        start_date = summary_data["start_date"]
+        end_date = summary_data["end_date"]
+
+        # 前月比（％）の算出用ヘルパー
+        def calc_ratio_text(curr_growth, prev_growth):
+            if not prev_growth or prev_growth == 0:
+                return "前月比: データなし"
+            ratio = (curr_growth / prev_growth - 1) * 100
+            sign = "+" if ratio >= 0 else ""
+            return f"前月比: {sign}{ratio:.1f}%"
+
+        sub_growth = summary_data["subscriber_growth"]
+        view_growth = summary_data["view_growth"]
+        like_growth = summary_data["like_growth"]
+
+        prev_sub_growth = prev_summary_data["subscriber_growth"] if prev_summary_data else 0
+        prev_view_growth = prev_summary_data["view_growth"] if prev_summary_data else 0
+        prev_like_growth = prev_summary_data["like_growth"] if prev_summary_data else 0
+
+        sub_ratio_text = calc_ratio_text(sub_growth, prev_sub_growth)
+        view_ratio_text = calc_ratio_text(view_growth, prev_view_growth)
+        like_ratio_text = calc_ratio_text(like_growth, prev_like_growth)
+
+        # 1. 親メッセージ (Block Kit) の構築
+        blocks = [
+            {
+                "type": "header",
+                "text": {
+                    "type": "plain_text",
+                    "text": "📊 YouTube 月次戦略レポート",
+                    "emoji": True
+                }
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*チャンネル*: `{channel_title}`\n*対象月*: {start_date} 〜 {end_date} (JST)"
+                }
+            },
+            {
+                "type": "divider"
+            },
+            {
+                "type": "section",
+                "fields": [
+                    {
+                        "type": "mrkdwn",
+                        "text": f"*👥 登録者数増分*\n+{sub_growth:,} 人\n_({sub_ratio_text})_\n現在: {summary_data['current_subscribers']:,} 人"
+                    },
+                    {
+                        "type": "mrkdwn",
+                        "text": f"*👁️ 再生数増分*\n+{view_growth:,} 回\n_({view_ratio_text})_"
+                    },
+                    {
+                        "type": "mrkdwn",
+                        "text": f"*👍 いいね数増分*\n+{like_growth:,} 回\n_({like_ratio_text})_"
+                    }
+                ]
+            },
+            {
+                "type": "divider"
+            }
+        ]
+
+        # 2. スレッド用の詳細アタッチメントの構築
+        thread_attachments = []
+
+        # ① 動画ランキングと初動分析
+        if top_videos_rankings:
+            ranking_text = ""
+            if top_videos_rankings.get("views"):
+                ranking_text += "*🔥 再生数 Top 3*\n"
+                for idx, v in enumerate(top_videos_rankings["views"][:3], 1):
+                    ranking_text += f"{idx}. {v['title']} (再生: {v['views']:,}回)\n"
+            if top_videos_rankings.get("ctr"):
+                ranking_text += "\n*🎯 クリック率 (CTR) Top 3*\n"
+                for idx, v in enumerate(top_videos_rankings["ctr"][:3], 1):
+                    ranking_text += f"{idx}. {v['title']} (CTR: {v['ctr']:.2f}%)\n"
+            if top_videos_rankings.get("duration"):
+                ranking_text += "\n*⏱️ 平均視聴時間 Top 3*\n"
+                for idx, v in enumerate(top_videos_rankings["duration"][:3], 1):
+                    m, s = divmod(v['averageViewDuration'], 60)
+                    ranking_text += f"{idx}. {v['title']} (平均: {m}分{s}秒)\n"
+            
+            if ranking_text:
+                thread_attachments.append({
+                    "title": "🎬 動画パフォーマンスランキング（前月）",
+                    "color": "#ff9900",
+                    "text": ranking_text.strip(),
+                    "mrkdwn_in": ["text"]
+                })
+
+        # ② 初動比較分析
+        if initial_performances:
+            init_text = ""
+            for v_id, perf in initial_performances.items():
+                if not perf.get("performances"):
+                    continue
+                init_text += f"*【{perf['title']}】*\n"
+                for p in perf["performances"]:
+                    days = "24時間" if p["age_days"] == 1 else "7日間"
+                    ratio = (p["target_views"] / p["avg_views"] - 1) * 100 if p["avg_views"] > 0 else 0
+                    sign = "+" if ratio >= 0 else ""
+                    init_text += f" - 公開{days}再生数: {p['target_views']:,}回 (過去平均比: {sign}{ratio:.1f}%)\n"
+            
+            if init_text:
+                thread_attachments.append({
+                    "title": "📈 新着動画の初動パフォーマンス比較",
+                    "color": "#36a64f",
+                    "text": init_text.strip(),
+                    "mrkdwn_in": ["text"]
+                })
+
+        # ③ 流入元と視聴者層分析
+        audience_and_traffic_text = ""
+        if traffic_sources:
+            audience_and_traffic_text += "*🚦 トラフィックソース割合*\n"
+            total_views = sum(s["views"] for s in traffic_sources)
+            for s in traffic_sources[:3]:
+                percentage = (s["views"] / total_views * 100) if total_views > 0 else 0
+                audience_and_traffic_text += f" - {s['source_type']}: {percentage:.1f}% ({s['views']:,}回)\n"
+        
+        if subscriber_views:
+            audience_and_traffic_text += "\n*👥 登録状況別の視聴者割合*\n"
+            sub_views = subscriber_views.get("SUBSCRIBED", {}).get("views", 0)
+            unsub_views = subscriber_views.get("UNSUBSCRIBED", {}).get("views", 0)
+            total_sub_views = sub_views + unsub_views
+            if total_sub_views > 0:
+                sub_pct = sub_views / total_sub_views * 100
+                unsub_pct = unsub_views / total_sub_views * 100
+                audience_and_traffic_text += f" - 登録者: {sub_pct:.1f}% / 未登録者: {unsub_pct:.1f}%\n"
+
+        if audience_and_traffic_text:
+            thread_attachments.append({
+                "title": "📊 視聴者流入元 ＆ 登録者視聴比率",
+                "color": "#1abc9c",
+                "text": audience_and_traffic_text.strip(),
+                "mrkdwn_in": ["text"]
+            })
+
+        # ④ 視聴維持率（離脱・リピート）分析
+        if retentions:
+            ret_text = ""
+            for v_id, ret in retentions.items():
+                if not ret.get("drop_points") and not ret.get("repeat_points"):
+                    continue
+                ret_text += f"*【{ret['title']}】*\n"
+                if ret.get("drop_points"):
+                    ret_text += " ⚠️ *離脱注意ポイント*:\n"
+                    for dp in ret["drop_points"]:
+                        ret_text += f"   - 動画の {dp['percent']}% 地点 (前区間比 -{dp['diff']:.1f}%)\n"
+                if ret.get("repeat_points"):
+                    ret_text += " ✨ *繰り返し再生・維持ポイント*:\n"
+                    for rp in ret["repeat_points"]:
+                        ret_text += f"   - 動画の {rp['percent']}% 地点 (前区間比 +{rp['diff']:.1f}%)\n"
+            
+            if ret_text:
+                thread_attachments.append({
+                    "title": "⏱️ 視聴維持率（離脱・リピート）分析",
+                    "color": "#9b59b6",
+                    "text": ret_text.strip(),
+                    "mrkdwn_in": ["text"]
+                })
+
+        # ⑤ コメント要約（存在する場合のみ）
+        if comment_analyses:
+            comm_text = ""
+            for v_id, comm in comment_analyses.items():
+                if comm.get("summary"):
+                    comm_text += f"*【{comm['title']}】*\n{comm['summary']}\n\n"
+            
+            if comm_text:
+                thread_attachments.append({
+                    "title": "💬 視聴者コメント分析・要約",
+                    "color": "#e74c3c",
+                    "text": comm_text.strip(),
+                    "mrkdwn_in": ["text"]
+                })
+
+        # ⑥ Geminiアドバイスの追加
+        thread_attachments.append({
+            "title": "🤖 Gemini AI 月次戦略アドバイス",
+            "color": "#4385f4",
+            "text": advice_text,
+            "mrkdwn_in": ["text"]
+        })
+
+        use_bot = all([self.bot_token, self.channel])
+
+        if use_bot:
+            try:
+                # スレッド誘導文を親メッセージに追加
+                blocks.append({
+                    "type": "context",
+                    "elements": [
+                        {
+                            "type": "mrkdwn",
+                            "text": "💬 *動画ランキング、流入分析、視聴維持率、Geminiアドバイス、コメント要約などは、このメッセージのスレッドに投稿されています。*"
+                        }
+                    ]
+                })
+
+                headers = {
+                    "Authorization": f"Bearer {self.bot_token}",
+                    "Content-Type": "application/json; charset=utf-8"
+                }
+                
+                # 親メッセージの送信
+                payload = {
+                    "channel": self.channel,
+                    "blocks": blocks,
+                    "text": f"📊 YouTube 月次戦略レポート: {channel_title}",
+                    "username": "クロBOT",
+                    "icon_emoji": ":kuro:"
+                }
+                response = requests.post(
+                    "https://slack.com/api/chat.postMessage",
+                    headers=headers,
+                    json=payload
+                )
+                response.raise_for_status()
+                res_json = response.json()
+                if not res_json.get("ok"):
+                    raise ValueError(f"Slack API error: {res_json.get('error')}")
+                
+                thread_ts = res_json.get("ts")
+
+                # スレッド内への投稿
+                if thread_ts and thread_attachments:
+                    thread_payload = {
+                        "channel": self.channel,
+                        "thread_ts": thread_ts,
+                        "attachments": thread_attachments,
+                        "username": "クロBOT",
+                        "icon_emoji": ":kuro:"
+                    }
+                    thread_response = requests.post(
+                        "https://slack.com/api/chat.postMessage",
+                        headers=headers,
+                        json=thread_payload
+                    )
+                    thread_response.raise_for_status()
+                    thread_res_json = thread_response.json()
+                    if not thread_res_json.get("ok"):
+                        raise ValueError(f"Slack API thread error: {thread_res_json.get('error')}")
+
+            except Exception as bot_err:
+                print(f"Warning: Bot Token monthly report sending failed ({bot_err}). Falling back to Webhook...")
+                use_bot = False
+
+        if not use_bot:
+            # Webhookによるフォールバック送信 (地続きで結合)
+            payload = {
+                "text": f"📊 *YouTube 月次戦略レポート: {channel_title}*",
+                "blocks": blocks,
+                "attachments": thread_attachments,
+                "username": "クロBOT",
+                "icon_emoji": ":kuro:"
+            }
+            response = requests.post(self.webhook_url, json=payload)
+            response.raise_for_status()
+
+

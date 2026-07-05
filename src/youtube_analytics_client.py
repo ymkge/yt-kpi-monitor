@@ -257,3 +257,78 @@ class YouTubeAnalyticsClient:
             }
 
         return result
+
+    def get_traffic_sources(self, start_date_str, end_date_str, max_results=5):
+        """
+        指定期間内のチャンネル全体のトラフィックソース（流入元）別のデータを取得する。
+        """
+        request = self.analytics.reports().query(
+            ids="channel==MINE",
+            startDate=start_date_str,
+            endDate=end_date_str,
+            metrics="views,estimatedMinutesWatched",
+            dimensions="trafficSourceType",
+            sort="-views",
+            maxResults=max_results
+        )
+        response = request.execute()
+        
+        rows = response.get("rows", [])
+        sources = []
+        for row in rows:
+            sources.append({
+                "source_type": row[0],
+                "views": int(row[1]) if row[1] is not None else 0,
+                "watch_time_minutes": int(row[2]) if row[2] is not None else 0
+            })
+        return sources
+
+    def get_audience_retention(self, video_id, start_date_str, end_date_str):
+        """
+        指定された動画の視聴維持率データを取得する。
+        """
+        request = self.analytics.reports().query(
+            ids="channel==MINE",
+            startDate=start_date_str,
+            endDate=end_date_str,
+            metrics="audienceWatchRatio",
+            dimensions="elapsedVideoTimeRatio",
+            filters=f"video=={video_id}"
+        )
+        response = request.execute()
+        
+        rows = response.get("rows", [])
+        # elapsedVideoTimeRatio でソート（昇順）
+        sorted_rows = sorted(rows, key=lambda x: float(x[0]))
+        
+        retention_data = []
+        for row in sorted_rows:
+            retention_data.append({
+                "ratio": float(row[0]),
+                "retention_percentage": float(row[1]) * 100.0 if row[1] is not None else 0.0
+            })
+        return retention_data
+
+    def get_subscriber_views(self, start_date_str, end_date_str):
+        """
+        指定期間内のチャンネル登録者・未登録者別の視聴回数と視聴時間を取得する。
+        """
+        request = self.analytics.reports().query(
+            ids="channel==MINE",
+            startDate=start_date_str,
+            endDate=end_date_str,
+            metrics="views,estimatedMinutesWatched",
+            dimensions="subscribedStatus"
+        )
+        response = request.execute()
+        
+        rows = response.get("rows", [])
+        sub_views = {}
+        for row in rows:
+            status = row[0] # 'SUBSCRIBED' or 'UNSUBSCRIBED'
+            sub_views[status] = {
+                "views": int(row[1]) if row[1] is not None else 0,
+                "watch_time_minutes": int(row[2]) if row[2] is not None else 0
+            }
+        return sub_views
+

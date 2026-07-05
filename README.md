@@ -7,7 +7,7 @@ GitHub ActionsとGoogle Cloudを活用することで、完全無料枠（Free T
 
 ## 主な機能
 *   **日次KPIアラート（Daily Monitor）**
-    *   毎日 0:00 (JST) に最新のチャンネル統計を取得。
+    *   毎日 19:00 (JST) に最新のチャンネル統計を取得。
     *   前回実行時からの差分（登録者数やいいね数の増加）を検知し、Slackへ通知。
     *   取得したデータを Google BigQuery へ永久蓄積。
 *   **週次AI戦略レポート（Weekly Advisor）**
@@ -26,7 +26,9 @@ GitHub ActionsとGoogle Cloudを活用することで、完全無料枠（Free T
 
 ### 1. Google Cloud 設定
 1.  BigQueryでデータセットを作成。
-2.  `config/query/create_channel_kpis_table.sql` を実行し、`channel_kpis` テーブルを作成。
+2.  以下の SQL ファイルを実行し、テーブルを作成する。
+    *   `config/query/create_channel_kpis_table.sql` (チャンネル全体のKPI蓄積用)
+    *   `config/query/create_video_kpis_table.sql` (動画ごとの日次KPI蓄積用)
     *   ※ SQL内の `{{project_id}}` 等は自身の環境に置換すること。
 3.  サービスアカウントを作成し、「BigQuery データ編集者」「BigQuery ジョブユーザー」権限を付与して JSON キーを発行。
 
@@ -69,7 +71,7 @@ GitHub ActionsとGoogle Cloudを活用することで、完全無料枠（Free T
 
 
 ## 手動実行手順
-定期実行（GitHub Actionsのcron）を待たずに、手動で日次モニターや週次レポートを実行する方法は以下の2通りあります。
+定期実行（GitHub Actionsのcron）を待たずに、手動で日次モニター、週次レポート、月次レポートを実行する方法は以下の2通りあります。
 
 ### 1. ローカル環境での手動実行
 事前に `.env` の設定と依存ライブラリのインストールを完了した上で、プロジェクトのルートディレクトリで以下のコマンドを実行します。
@@ -84,6 +86,11 @@ GitHub ActionsとGoogle Cloudを活用することで、完全無料枠（Free T
   python3 -m src.main_weekly
   ```
 
+* **月次AI戦略レポートの実行**
+  ```bash
+  python3 -m src.main_monthly
+  ```
+
 ### 2. GitHub Actions 上での手動実行
 GitHubリポジトリ上で手動実行（Workflow Dispatch）が可能です。
 
@@ -91,6 +98,7 @@ GitHubリポジトリ上で手動実行（Workflow Dispatch）が可能です。
 2. 左側のメニューから実行したいワークフローを選択します：
    * **Daily KPI Alert**（日次モニター）
    * **Weekly Strategy Report**（週次レポート）
+   * **Monthly Strategy Report**（月次レポート）
 3. 画面右側に表示される **Run workflow** ドロップダウンをクリックし、**Run workflow** ボタンを押して実行します。
 
 
@@ -99,7 +107,7 @@ GitHubリポジトリ上で手動実行（Workflow Dispatch）が可能です。
 yt-kpi-monitor/
 ├── .agents/
 │   └── AGENTS.md        # Antigravity用の開発ルール（自動認識されます）
-├── .github/workflows/   # GitHub Actions (日次/週次)
+├── .github/workflows/   # GitHub Actions (日次/週次/月次)
 ├── config/query/        # BigQuery実行用SQL
 ├── scripts/             # ローカル実行用補助スクリプト
 │   └── get_oauth_tokens.py
@@ -110,7 +118,8 @@ yt-kpi-monitor/
 │   ├── gemini_client.py
 │   ├── slack_client.py
 │   ├── main_daily.py
-│   └── main_weekly.py
+│   ├── main_weekly.py
+│   └── main_monthly.py
 ├── requirements.txt
 └── README.md            # 本ドキュメント
 ```
@@ -138,37 +147,3 @@ yt-kpi-monitor/
 ### 今後の拡張予定 (Next Steps) *この中で完了したタスクはREADME.mdから削除していく（ISSUEに履歴を残している為）
 - [ ] エラー発生時のSlack通知強化
 - [ ] Looker Studio によるデータ可視化
-- [ ] 月次レポーティングの導入 (月間での累積でのランキングや月間サマリー情報、LLMでの改善ポイント抽出レポートなど) #25
-
-- #25の案は以下です。実現可能有無などを検討した上で、設計書をまとめてください。
-1. 理想的な月間レポートの構成（Slack/ミーティング用）
-単なる数字の羅列ではなく、**「何が起きたか」「なぜ起きたか」「次どうするか」**がひと目でわかる構成が理想的です。
-
-サマリー（全体像）:
-チャンネル全体の総視聴数、総インプレッション数、新規登録者数。
-前月比（％）を併記し、成長トレンドを可視化。
-動画別ランキング（Top 3 / Bottom 3）:
-インプレッション数順: 「露出」の強さを確認。
-クリック率（CTR）順: 「サムネイル・タイトル」の引きの強さを確認。
-平均視聴維持率順: 「コンテンツの満足度」を確認。
-視聴者分析:
-リピーター vs 新規視聴者の比率: チャンネルの「ファン化」が進んでいるか、外部への「拡散」が起きているかを判断。
-2. API連携機能に組み込むべき「ベストな追加機能」
-分析をより深く、かつ自動化するために、以下の機能を組み込むことを強くおすすめします。
-
-① 「初動24時間・7日間」の比較分析
-公開から一定期間（例：最初の24時間）のパフォーマンスを過去の動画平均と比較する機能です。
-
-メリット: 月末に振り返るだけでなく、「この動画は平均より初動が良いから、さらにプッシュしよう」といった迅速な判断が可能になります。
-② トラフィックソース別のパフォーマンス特定
-視聴者が「関連動画」から来たのか、「YouTube検索」から来たのかを自動判別します。
-
-メリット: 「検索に強い動画」と「おすすめに乗りやすい動画」を分けることで、チーム内での企画の狙い（SEO狙いかバズ狙いか）が明確になります。
-③ 視聴維持率の「離脱ポイント」自動抽出
-動画のどの地点で大きく視聴者が離脱したか、または繰り返し再生されたかを特定します。
-
-メリット: ミーティングで「1分30秒あたりの説明が長すぎて離脱されている」といった、具体的な編集の改善案を議論しやすくなります。
-④ コメントの「頻出キーワード」と感情分析
-視聴者のコメントから、ポジティブな反応や質問が多いトピックを自動でまとめます。
-
-メリット: 数値（定量）だけでなく、視聴者の生の声（定性）をチームで共有でき、次回の動画のQ&A企画や改善に直結します。

@@ -115,6 +115,15 @@ def main():
         else:
             print("::warning::OAuth credentials are not fully set. Skipping recent video KPI report.")
 
+        # 4.5. 直近動画のKPIをBigQueryに保存
+        if recent_videos_kpis:
+            try:
+                print("Saving recent video KPIs to BigQuery...")
+                bq.save_video_kpis(recent_videos_kpis)
+            except Exception as bq_video_err:
+                print(f"::warning::Failed to save recent video KPIs to BigQuery: {bq_video_err}")
+                print("Proceeding to Slack notification.")
+
         # 5. Slack通知
         print("Sending Slack alert...")
         thread_ts = slack.send_kpi_alert(current_kpi, previous_kpi, recent_videos_kpis if recent_videos_kpis else None)

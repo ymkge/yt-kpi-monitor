@@ -166,3 +166,28 @@ class YouTubeClient:
                 break
                 
         return total_likes
+
+    def get_video_comments(self, video_id, max_results=100):
+        """
+        指定された動画のコメント（トップレベルのコメント）を取得する。
+        """
+        comments = []
+        try:
+            request = self.youtube.commentThreads().list(
+                part="snippet",
+                videoId=video_id,
+                maxResults=min(max_results, 100),
+                textFormat="plainText"
+            )
+            response = request.execute()
+            
+            for item in response.get("items", []):
+                snippet = item["snippet"]["topLevelComment"]["snippet"]
+                comments.append(snippet.get("textDisplay", ""))
+                
+        except Exception as e:
+            # コメント機能が無効な動画などの場合は空リストを返す
+            print(f"Warning: Failed to fetch comments for video {video_id}: {e}")
+            
+        return comments
+
