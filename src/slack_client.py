@@ -13,7 +13,7 @@ class SlackClient:
         if not all([self.bot_token, self.channel]) and not self.webhook_url:
             raise ValueError("Either (SLACK_BOT_TOKEN and SLACK_CHANNEL) or SLACK_WEBHOOK_URL must be set.")
 
-    def send_kpi_alert(self, current_kpi, previous_kpi=None, recent_videos_kpis=None):
+    def send_kpi_alert(self, current_kpi, previous_kpi=None, recent_videos_kpis=None, increased_like_videos=None):
         """
         KPIの増分を含めたSlackアラートを送信する。
         Bot Tokenが利用可能な場合は、親メッセージ(Block Kit)を送信し、スレID(ts)を返す。
@@ -76,6 +76,24 @@ class SlackClient:
                 "type": "divider"
             }
         ]
+
+        if increased_like_videos:
+            like_details = []
+            for v in increased_like_videos:
+                tag = "🆕 [新規]" if v.get("is_new") else "🎬 [既存]"
+                pub_date = v["published_at"].split("T")[0] if "T" in v["published_at"] else ""
+                like_details.append(f"• {tag} *{v['title']}* (公開: {pub_date})\n   ↳ 前日比 *+{v['diff']:,}* (現在: {v['current_likes']:,})")
+            
+            blocks.append({
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": "*👍 いいね数が増加した動画*\n" + "\n".join(like_details)
+                }
+            })
+            blocks.append({
+                "type": "divider"
+            })
 
         # 2. 送信方法の判別（Bot Token優先、Webhookフォールバック）
         use_bot = all([self.bot_token, self.channel])

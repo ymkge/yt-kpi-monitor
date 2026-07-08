@@ -118,54 +118,89 @@ class YouTubeClient:
             "video_count": int(stats.get("videoCount", 0)),
         }
 
-    def get_total_likes(self, channel_id):
+    def get_all_videos_stats(self, channel_id, max_results=1000):
         """
-        全動画のいいね数の合計を取得する（Data API v3のクォータを消費しやすいため注意）。
-        Phase 3でAnalytics APIを使用するまでの暫定実装。
+        チャンネル内の全動画（または最新max_results件）の簡易スタッツ（ID, タイトル, 公開日, 再生数, いいね数）を取得する。
         """
-        # チャンネルのアップロード動画リストIDを取得
         request = self.youtube.channels().list(
             part="contentDetails",
             id=channel_id
         )
         response = request.execute()
         if not response.get("items"):
-            return 0
+            return []
         
         uploads_playlist_id = response["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
         
-        total_likes = 0
+        videos_stats = []
         next_page_token = None
         
-        # 全動画を回すとクォータが厳しいため、直近50件程度にするか検討が必要だが、
-        # ここでは一旦全件取得のロジック（簡易版）を記述
-        while True:
+        while len(videos_stats) < max_results:
+            batch_size = min(50, max_results - len(videos_stats))
             playlist_request = self.youtube.playlistItems().list(
-                part="contentDetails",
+                part="snippet,contentDetails",
                 playlistId=uploads_playlist_id,
-                maxResults=50,
+                maxResults=batch_size,
                 pageToken=next_page_token
             )
             playlist_response = playlist_request.execute()
             
-            video_ids = [item["contentDetails"]["videoId"] for item in playlist_response.get("items", [])]
-            if not video_ids:
+            items = playlist_response.get("items", [])
+            if not items:
                 break
                 
+            video_data = []
+            for item in items:
+                snippet = item.get("snippet", {})
+                content_details = item.get("contentDetails", {})
+                video_id = content_details.get("videoId")
+                title = snippet.get("title", "不明な動画")
+                published_at = snippet.get("publishedAt")
+                if video_id:
+                    video_data.append({
+                        "video_id": video_id,
+                        "title": title,
+                        "published_at": published_at
+                    })
+            
+            if not video_data:
+                break
+                
+            video_ids = [v["video_id"] for v in video_data]
             video_request = self.youtube.videos().list(
                 part="statistics",
                 id=",".join(video_ids)
             )
             video_response = video_request.execute()
             
+            stats_map = {}
             for video in video_response.get("items", []):
-                total_likes += int(video["statistics"].get("likeCount", 0))
+                v_id = video["id"]
+                stats = video.get("statistics", {})
+                stats_map[v_id] = {
+                    "views": int(stats.get("viewCount", 0)),
+                    "likes": int(stats.get("likeCount", 0))
+                }
+            
+            for v in video_data:
+                stats = stats_map.get(v["video_id"], {"views": 0, "likes": 0})
+                v["views"] = stats["views"]
+                v["likes"] = stats["likes"]
+                videos_stats.append(v)
             
             next_page_token = playlist_response.get("nextPageToken")
             if not next_page_token:
                 break
                 
-        return total_likes
+        return videos_stats
+
+    def get_total_likes(self, channel_id):
+        """
+        全動画のいいね数の合計を取得する。
+        """
+        videos_stats = self.get_all_videos_stats(channel_id)
+        return sum(v["likes"] for v in videos_stats)
+
 
     def get_video_comments(self, video_id, max_results=100):
         """

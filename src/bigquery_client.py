@@ -263,3 +263,39 @@ class BigQueryClient:
             
         return performance_list
 
+    def fetch_previous_video_kpis(self, today_str=None):
+        """
+        前回の各動画のKPIデータ（いいね数など）を取得する。
+        """
+        if not today_str:
+            today_str = datetime.now(JST).strftime("%Y-%m-%d")
+            
+        sql_path = os.path.join("config", "query", "fetch_previous_video_kpis.sql")
+        with open(sql_path, "r") as f:
+            query_template = f.read()
+            
+        query = query_template.replace("{{project_id}}", self.project_id).replace("{{dataset_id}}", self.dataset_id)
+        
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("today", "DATE", today_str),
+            ]
+        )
+        
+        try:
+            query_job = self.client.query(query, job_config=job_config)
+            results = query_job.result()
+            
+            previous_video_kpis = {}
+            for row in results:
+                row_dict = dict(row)
+                previous_video_kpis[row_dict["video_id"]] = {
+                    "likes": row_dict["likes"],
+                    "title": row_dict["title"]
+                }
+            return previous_video_kpis
+        except Exception as e:
+            print(f"Warning: Failed to fetch previous video KPIs: {e}")
+            return {}
+
+
