@@ -67,7 +67,9 @@ def main():
                     print(f"Warning: Failed to parse published_at for video {v_id}: {parse_err}")
 
             if is_new_video:
-                if current_likes > 0:
+                # 過去データがない動画は、公開から3日以内の「本当の新規動画」である場合のみ、
+                # いいねが1以上あれば増加とみなす。古い既存動画の初回計測時は差分が不明なため除外する。
+                if is_new and current_likes > 0:
                     increased_like_videos.append({
                         "video_id": v_id,
                         "title": v["title"],
