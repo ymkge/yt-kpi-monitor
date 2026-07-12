@@ -148,7 +148,7 @@ def main():
 
         # 4. Geminiで戦略アドバイスを生成
         print("Generating strategy advice using Gemini API...")
-        advice = gemini.generate_strategy_advice(kpi_summary_text)
+        advice = gemini.generate_strategy_advice(kpi_summary_text, view_growth=summary_data.get('view_growth'))
 
         # 5. Slackにレポートを送信
         print("Sending weekly report to Slack...")

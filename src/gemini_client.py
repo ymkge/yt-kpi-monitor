@@ -7,6 +7,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+try:
+    WEEKLY_VIEW_THRESHOLD = int(os.getenv("WEEKLY_VIEW_THRESHOLD", 1000))
+except ValueError:
+    WEEKLY_VIEW_THRESHOLD = 1000
+
 class GeminiClient:
     def __init__(self, api_key=None):
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
@@ -14,7 +19,7 @@ class GeminiClient:
             raise ValueError("GEMINI_API_KEY is not set.")
         self.client = genai.Client(api_key=self.api_key)
 
-    def generate_strategy_advice(self, kpi_summary_text):
+    def generate_strategy_advice(self, kpi_summary_text, view_growth=None):
         """
         KPIの集計データに基づき、Gemini APIを用いて戦略アドバイスを生成する。
         """
@@ -43,7 +48,7 @@ class GeminiClient:
    - 数値の伸びやポジティブな傾向を、具体的なデータ根拠と共に1項目あたり1〜2行で簡潔に記載してください。
 3. **改善が必要な点（1〜2点）**
    - 課題や注意すべき数値を、具体的なデータ根拠と共に1項目あたり1〜2行で簡潔に記載してください。
-4. **翌週に向けた具体的なアクション案（3点）**
+4. **今後に向けた具体的なアクション案（3点）**
    - コンテンツ制作や運用面での提案を、実行可能かつ具体的な内容で、1項目あたり1〜2行で簡潔に記載してください。
 
 # 制約事項
@@ -51,6 +56,18 @@ class GeminiClient:
 - 箇条書きの各項目は、最大でも2行以内に収めるように簡潔に要約してください。
 - 抽象的なアドバイスは避け、データに基づいた実践的な内容にしてください。
 """
+        # 総再生数が閾値未満の場合、追加指示を結合
+        if view_growth is not None and view_growth < WEEKLY_VIEW_THRESHOLD:
+            prompt += f"""
+# 特別指示（最優先で考慮してください）
+現在、週間の総再生数が{WEEKLY_VIEW_THRESHOLD}回未満（現状: {view_growth:,}回）に留まっています。
+これは、既存のチャンネル登録者以外へ動画が推奨（レコメンド）されておらず、YouTubeアルゴリズムからの評価が低い状態にあることを示しています。
+この深刻な現状を踏まえ、以下の点について必ずアドバイスのいずれかのセクション（特に「改善が必要な点」や「今後に向けた具体的なアクション案」）に含めてください：
+- CTR（クリック率）が極端に低く、インプレッション（露出）が伸び悩んでいることが低再生数の真因であること。
+- 再生数とチャンネル登録者数を伸ばすためには、CTR上位の動画10本ほどで「CTR 3%以上」を達成することが最優先の目標であること。
+- アルゴリズム評価を回復させ、新規視聴者にレコメンドされるための具体的なサムネイル改善や初動の工夫。
+"""
+
         max_retries = 3
         retry_delay = 10  # 429エラー時の初回待機時間（秒）
         # 環境変数からモデル名を取得し、未設定または空文字列の場合は最新のFlashモデル（エイリアス）をデフォルトにする

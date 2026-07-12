@@ -372,7 +372,7 @@ class SlackClient:
 
         # Geminiアドバイスの追加
         thread_attachments.append({
-            "title": "🤖 Gemini AI 戦略アドバイス",
+            "title": ":kuro: の打改善アドバイス",
             "color": "#4385f4",
             "text": advice_text,
             "mrkdwn_in": ["text"]
@@ -388,7 +388,7 @@ class SlackClient:
                     "elements": [
                         {
                             "type": "mrkdwn",
-                            "text": "💬 *動画パフォーマンスランキングおよび Gemini AI 戦略アドバイスは、このメッセージのスレッドに投稿されています。*"
+                            "text": "💬 *動画パフォーマンスランキングおよび :kuro: の打改善アドバイスは、このメッセージのスレッドに投稿されています。*"
                         }
                     ]
                 })
