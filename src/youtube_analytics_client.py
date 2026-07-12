@@ -59,6 +59,7 @@ class YouTubeAnalyticsClient:
         再生数順で多めにデータを取得した後にPython側でソートとフィルタリングを行います。
         """
         # APIからは最も基本的な「再生数による降順ソート」で多めに取得する
+        api_max_results = max(30, max_results)
         request = self.analytics.reports().query(
             ids="channel==MINE",
             startDate=start_date_str,
@@ -66,7 +67,7 @@ class YouTubeAnalyticsClient:
             metrics="views,likes",
             dimensions="video",
             sort="-views",
-            maxResults=30  # ランキング候補として十分な件数を取得
+            maxResults=api_max_results
         )
         response = request.execute()
 

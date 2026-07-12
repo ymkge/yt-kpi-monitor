@@ -56,18 +56,37 @@ def main():
                 )
 
                 print(f"Fetching top videos data ({start_date_28} ~ {end_date_28})...")
-                top_views_videos, top_likes_videos = yt_analytics.get_top_videos(start_date_28, end_date_28)
+                # 候補を広げるため、多めに200件取得
+                top_views_videos_all, top_likes_videos_all = yt_analytics.get_top_videos(start_date_28, end_date_28, max_results=200)
 
-                # CTRおよびインプレッションの追加取得
-                video_ids = list(set(
-                    [v["video_id"] for v in top_views_videos] + [v["video_id"] for v in top_likes_videos]
-                ))
+                # Slack表示やプロンプトの通常ランキング用には上位3件を使用
+                top_views_videos = top_views_videos_all[:3]
+                top_likes_videos = top_likes_videos_all[:3]
+
+                # 直近28日間に30回以上再生された動画をCTR候補とする（不平等性の解消と統計的最低ラインの担保）
+                ctr_candidate_videos = []
+                seen_candidates = set()
+                # 再生数およびいいね数上位動画すべてからマージして判定
+                for v in top_views_videos_all + top_likes_videos_all:
+                    vid = v["video_id"]
+                    if vid not in seen_candidates:
+                        seen_candidates.add(vid)
+                        if v.get("views", 0) >= 30:
+                            ctr_candidate_videos.append(v)
+
+                video_ids = [v["video_id"] for v in ctr_candidate_videos]
                 if video_ids:
                     try:
-                        print("Fetching impressions and CTR for top videos...")
+                        print(f"Fetching impressions and CTR for {len(video_ids)} candidate videos...")
                         ctr_data = yt_analytics.get_impressions_and_ctr(video_ids)
 
-                        # ランキング用データにCTR情報をマージ
+                        # 各動画データにCTR情報をマージ
+                        for v in ctr_candidate_videos:
+                            v_ctr = ctr_data.get(v["video_id"], {})
+                            v["ctr"] = v_ctr.get("ctr", 0.0)
+                            v["impressions"] = v_ctr.get("impressions", 0)
+
+                        # 表示用のTOP3動画にもCTR情報を反映する
                         for v in top_views_videos:
                             v_ctr = ctr_data.get(v["video_id"], {})
                             v["ctr"] = v_ctr.get("ctr", 0.0)
@@ -78,16 +97,9 @@ def main():
                             v["ctr"] = v_ctr.get("ctr", 0.0)
                             v["impressions"] = v_ctr.get("impressions", 0)
 
-                        # 一意な動画リストを作成してCTRでソート
-                        detailed_videos = []
-                        seen = set()
-                        for v in top_views_videos + top_likes_videos:
-                            if v["video_id"] not in seen:
-                                seen.add(v["video_id"])
-                                detailed_videos.append(v)
-
+                        # CTRでソートして上位3件を抽出
                         top_ctr_videos = sorted(
-                            [v for v in detailed_videos if v.get("ctr", 0.0) > 0],
+                            [v for v in ctr_candidate_videos if v.get("ctr", 0.0) > 0],
                             key=lambda x: x["ctr"],
                             reverse=True
                         )[:3]
