@@ -284,7 +284,7 @@ class SlackClient:
         if not res_json.get("ok"):
             raise ValueError(f"Slack API error: {res_json.get('error')}")
 
-    def send_weekly_report(self, summary_data, advice_text, top_views_videos=None, top_likes_videos=None):
+    def send_weekly_report(self, summary_data, advice_text, top_views_videos=None, top_likes_videos=None, top_ctr_videos=None):
         """
         週次集計データとGeminiの分析結果を含めたレポートを送信する。
         数値サマリは親メッセージ(Block Kit)として送信し、
@@ -340,18 +340,28 @@ class SlackClient:
         thread_attachments = []
 
         # 動画ランキングの追加
-        if top_views_videos or top_likes_videos:
+        if top_views_videos or top_likes_videos or top_ctr_videos:
             ranking_text = ""
             if top_views_videos:
                 ranking_text += "*🔥 再生数ランキング (直近28日間)*\n"
                 for idx, video in enumerate(top_views_videos, 1):
-                    ranking_text += f"{idx}. {video['title']} (再生数: {video['views']:,}回, いいね数: {video['likes']:,}回)\n"
+                    ctr_val = video.get('ctr', 0.0)
+                    ctr_text = f", CTR: {ctr_val:.2f}%" if ctr_val > 0 else ""
+                    ranking_text += f"{idx}. {video['title']} (再生数: {video['views']:,}回, いいね数: {video['likes']:,}回{ctr_text})\n"
                 ranking_text += "\n"
 
             if top_likes_videos:
                 ranking_text += "*👍 高評価（いいね）数ランキング (直近28日間)*\n"
                 for idx, video in enumerate(top_likes_videos, 1):
-                    ranking_text += f"{idx}. {video['title']} (いいね数: {video['likes']:,}回, 再生数: {video['views']:,}回)\n"
+                    ctr_val = video.get('ctr', 0.0)
+                    ctr_text = f", CTR: {ctr_val:.2f}%" if ctr_val > 0 else ""
+                    ranking_text += f"{idx}. {video['title']} (いいね数: {video['likes']:,}回, 再生数: {video['views']:,}回{ctr_text})\n"
+                ranking_text += "\n"
+
+            if top_ctr_videos:
+                ranking_text += "*🎯 クリック率 (CTR) ランキング (直近28日間)*\n"
+                for idx, video in enumerate(top_ctr_videos, 1):
+                    ranking_text += f"{idx}. {video['title']} (CTR: {video['ctr']:.2f}%, 再生数: {video['views']:,}回)\n"
 
             thread_attachments.append({
                 "title": "🎬 動画パフォーマンスランキング",

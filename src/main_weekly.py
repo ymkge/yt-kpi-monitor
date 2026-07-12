@@ -39,6 +39,7 @@ def main():
 
         top_views_videos = None
         top_likes_videos = None
+        top_ctr_videos = []
 
         oauth_client_id = os.getenv("YOUTUBE_OAUTH_CLIENT_ID")
         oauth_client_secret = os.getenv("YOUTUBE_OAUTH_CLIENT_SECRET")
@@ -56,6 +57,49 @@ def main():
 
                 print(f"Fetching top videos data ({start_date_28} ~ {end_date_28})...")
                 top_views_videos, top_likes_videos = yt_analytics.get_top_videos(start_date_28, end_date_28)
+
+                # CTRおよびインプレッションの追加取得
+                video_ids = list(set(
+                    [v["video_id"] for v in top_views_videos] + [v["video_id"] for v in top_likes_videos]
+                ))
+                if video_ids:
+                    try:
+                        print("Fetching impressions and CTR for top videos...")
+                        ctr_data = yt_analytics.get_impressions_and_ctr(video_ids)
+
+                        # ランキング用データにCTR情報をマージ
+                        for v in top_views_videos:
+                            v_ctr = ctr_data.get(v["video_id"], {})
+                            v["ctr"] = v_ctr.get("ctr", 0.0)
+                            v["impressions"] = v_ctr.get("impressions", 0)
+
+                        for v in top_likes_videos:
+                            v_ctr = ctr_data.get(v["video_id"], {})
+                            v["ctr"] = v_ctr.get("ctr", 0.0)
+                            v["impressions"] = v_ctr.get("impressions", 0)
+
+                        # 一意な動画リストを作成してCTRでソート
+                        detailed_videos = []
+                        seen = set()
+                        for v in top_views_videos + top_likes_videos:
+                            if v["video_id"] not in seen:
+                                seen.add(v["video_id"])
+                                detailed_videos.append(v)
+
+                        top_ctr_videos = sorted(
+                            [v for v in detailed_videos if v.get("ctr", 0.0) > 0],
+                            key=lambda x: x["ctr"],
+                            reverse=True
+                        )[:3]
+                    except Exception as ctr_err:
+                        print(f"::warning::Failed to fetch CTR data: {ctr_err}")
+                        # フォールバック処理
+                        for v in top_views_videos:
+                            v["ctr"] = 0.0
+                            v["impressions"] = 0
+                        for v in top_likes_videos:
+                            v["ctr"] = 0.0
+                            v["impressions"] = 0
             except Exception as oauth_err:
                 print(f"::warning::Failed to fetch analytics data: {oauth_err}")
                 print("Proceeding without video ranking data.")
@@ -71,16 +115,24 @@ def main():
 """
 
         # ランキング情報がある場合はプロンプトに補足
-        if top_views_videos or top_likes_videos:
+        if top_views_videos or top_likes_videos or top_ctr_videos:
             kpi_summary_text += "\n# 動画パフォーマンスランキング（直近28日間）\n"
             if top_views_videos:
                 kpi_summary_text += "## 再生数上位動画\n"
                 for idx, v in enumerate(top_views_videos, 1):
-                    kpi_summary_text += f"{idx}. {v['title']} (再生数: {v['views']:,}回, いいね数: {v['likes']:,}回)\n"
+                    ctr_val = v.get("ctr", 0.0)
+                    ctr_text = f", CTR: {ctr_val:.2f}%" if ctr_val > 0 else ""
+                    kpi_summary_text += f"{idx}. {v['title']} (再生数: {v['views']:,}回, いいね数: {v['likes']:,}回{ctr_text})\n"
             if top_likes_videos:
                 kpi_summary_text += "## 高評価（いいね）数上位動画\n"
                 for idx, v in enumerate(top_likes_videos, 1):
-                    kpi_summary_text += f"{idx}. {v['title']} (いいね数: {v['likes']:,}回, 再生数: {v['views']:,}回)\n"
+                    ctr_val = v.get("ctr", 0.0)
+                    ctr_text = f", CTR: {ctr_val:.2f}%" if ctr_val > 0 else ""
+                    kpi_summary_text += f"{idx}. {v['title']} (いいね数: {v['likes']:,}回, 再生数: {v['views']:,}回{ctr_text})\n"
+            if top_ctr_videos:
+                kpi_summary_text += "## クリック率（CTR）上位動画\n"
+                for idx, v in enumerate(top_ctr_videos, 1):
+                    kpi_summary_text += f"{idx}. {v['title']} (CTR: {v['ctr']:.2f}%, 再生数: {v['views']:,}回)\n"
 
         # 4. Geminiで戦略アドバイスを生成
         print("Generating strategy advice using Gemini API...")
@@ -92,7 +144,8 @@ def main():
             summary_data=summary_data,
             advice_text=advice,
             top_views_videos=top_views_videos,
-            top_likes_videos=top_likes_videos
+            top_likes_videos=top_likes_videos,
+            top_ctr_videos=top_ctr_videos
         )
 
         print("Weekly Strategy Report completed successfully.")
