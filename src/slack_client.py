@@ -5,6 +5,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class SlackClient:
+    # CTR評価の閾値定数 (音楽BGMチャンネル向け調整)
+    CTR_THRESHOLD_EXCELLENT = 4.0
+    CTR_THRESHOLD_STANDARD = 2.0
+
     def __init__(self, webhook_url=None, bot_token=None, channel=None):
         self.webhook_url = webhook_url or os.getenv("SLACK_WEBHOOK_URL")
         self.bot_token = bot_token or os.getenv("SLACK_BOT_TOKEN")
@@ -12,6 +16,19 @@ class SlackClient:
         
         if not all([self.bot_token, self.channel]) and not self.webhook_url:
             raise ValueError("Either (SLACK_BOT_TOKEN and SLACK_CHANNEL) or SLACK_WEBHOOK_URL must be set.")
+
+    def _get_ctr_evaluation(self, ctr):
+        """
+        CTRの値から評価ラベルと絵文字を返す。
+        """
+        if ctr is None:
+            return ""
+        if ctr >= self.CTR_THRESHOLD_EXCELLENT:
+            return " 🟢 *優秀* (優秀なサムネイル)"
+        elif ctr >= self.CTR_THRESHOLD_STANDARD:
+            return " 🟡 *標準* (標準的なサムネイル)"
+        else:
+            return " 🔴 *要改善* (ターゲット層に届いていない)"
 
     def send_kpi_alert(self, current_kpi, previous_kpi=None, recent_videos_kpis=None, increased_like_videos=None):
         """
@@ -163,12 +180,13 @@ class SlackClient:
                     impressions = metrics.get("impressions")
                     ctr = metrics.get("ctr")
                     
-                    if impressions is not None and impressions > 0:
+                    if impressions is not None and impressions > 0 and ctr is not None:
                         impressions_text = f"{impressions:,} 回"
-                        ctr_text = f"{ctr:.2f}%"
+                        ctr_eval = self._get_ctr_evaluation(ctr)
+                        ctr_text = f"{ctr:.2f}%{ctr_eval}"
                     else:
                         impressions_text = "集計中 またはデータなし"
-                        ctr_text = "集計中"
+                        ctr_text = "集計中 ⚪️ (データ反映待ち)"
 
                     pub_time = video["published_at"].replace("T", " ").replace("Z", "")[:16]
 
@@ -236,12 +254,13 @@ class SlackClient:
             impressions = metrics.get("impressions")
             ctr = metrics.get("ctr")
             
-            if impressions is not None and impressions > 0:
+            if impressions is not None and impressions > 0 and ctr is not None:
                 impressions_text = f"{impressions:,} 回"
-                ctr_text = f"{ctr:.2f}%"
+                ctr_eval = self._get_ctr_evaluation(ctr)
+                ctr_text = f"{ctr:.2f}%{ctr_eval}"
             else:
                 impressions_text = "集計中 またはデータなし"
-                ctr_text = "集計中"
+                ctr_text = "集計中 ⚪️ (データ反映待ち)"
 
             pub_time = video["published_at"].replace("T", " ").replace("Z", "")[:16]
 
