@@ -17,6 +17,19 @@ class SlackClient:
         if not all([self.bot_token, self.channel]) and not self.webhook_url:
             raise ValueError("Either (SLACK_BOT_TOKEN and SLACK_CHANNEL) or SLACK_WEBHOOK_URL must be set.")
 
+    def _clean_slack_mrkdwn(self, text):
+        """
+        Geminiなどの出力テキストから、Slack非対応のMarkdown記法 (### や **) をSlack用のmrkdwn記法 (*太字*) に変換する。
+        """
+        import re
+        if not text:
+            return ""
+        # 1. ### や ## などの見出し記法を除去
+        cleaned = re.sub(r'^#{1,6}\s*', '', text, flags=re.MULTILINE)
+        # 2. **太字** を *太字* に置換
+        cleaned = re.sub(r'\*\*(.*?)\*\*', r'*\1*', cleaned)
+        return cleaned.strip()
+
     def _get_ctr_evaluation(self, ctr):
         """
         CTRの値から評価ラベルと絵文字を返す。
@@ -390,10 +403,11 @@ class SlackClient:
             })
 
         # Geminiアドバイスの追加
+        cleaned_advice = self._clean_slack_mrkdwn(advice_text)
         thread_attachments.append({
             "title": ":kuro: の打改善アドバイス",
             "color": "#4385f4",
-            "text": advice_text,
+            "text": cleaned_advice,
             "mrkdwn_in": ["text"]
         })
 
@@ -670,10 +684,11 @@ class SlackClient:
                 })
 
         # ⑥ Geminiアドバイスの追加
+        cleaned_advice = self._clean_slack_mrkdwn(advice_text)
         thread_attachments.append({
             "title": "🤖 Gemini AI 月次戦略アドバイス",
             "color": "#4385f4",
-            "text": advice_text,
+            "text": cleaned_advice,
             "mrkdwn_in": ["text"]
         })
 
