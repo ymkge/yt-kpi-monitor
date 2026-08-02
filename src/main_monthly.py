@@ -88,7 +88,40 @@ def main():
             print(f"No summary data found for pre month ({start_prev} ~ {end_prev}). Skipping report.")
             return
 
-        # 3. YouTube Analytics & Reporting API からのデータ取得
+        # 3. 前月公開動画リストの取得とCVRの算出
+        import google.cloud.bigquery as bq_sdk
+        target_videos_sql = f"""
+        SELECT DISTINCT
+            video_id,
+            MAX(title) AS title,
+            MAX(published_at) AS published_at
+        FROM
+            `{bq.project_id}.{bq.dataset_id}.video_kpis`
+        WHERE
+            DATE(published_at) >= @start_date
+            AND DATE(published_at) <= @end_date
+        GROUP BY
+            video_id;
+        """
+        job_config = bq_sdk.QueryJobConfig(
+            query_parameters=[
+                bq_sdk.ScalarQueryParameter("start_date", "DATE", start_prev),
+                bq_sdk.ScalarQueryParameter("end_date", "DATE", end_prev),
+            ]
+        )
+        query_job = bq.client.query(target_videos_sql, job_config=job_config)
+        uploaded_videos = [dict(row) for row in query_job.result()]
+        uploaded_video_count = len(uploaded_videos)
+
+        # CVR (登録転換率) の算出（ゼロ除算対策）
+        sub_growth = summary_data.get("subscriber_growth", 0)
+        view_growth = summary_data.get("view_growth", 0)
+        cvr = (sub_growth / view_growth * 100) if view_growth > 0 else 0.0
+
+        summary_data["uploaded_video_count"] = uploaded_video_count
+        summary_data["cvr"] = cvr
+
+        # 4. YouTube Analytics & Reporting API からのデータ取得
         oauth_available = all([
             os.getenv("YOUTUBE_OAUTH_CLIENT_ID"),
             os.getenv("YOUTUBE_OAUTH_CLIENT_SECRET"),
@@ -144,7 +177,7 @@ def main():
                         
                         detailed_videos.append({
                             "video_id": vid,
-                            "title": v_metrics.get("title", "不明な動画") if "title" in v_metrics else "", # 後ほど設定
+                            "title": v_metrics.get("title", "不明な動画") if "title" in v_metrics else "",
                             "averageViewDuration": v_metrics.get("average_view_duration", 0),
                             "ctr": v_impr.get("ctr", 0.0),
                             "impressions": v_impr.get("impressions", 0)
@@ -169,35 +202,7 @@ def main():
                         reverse=True
                     )[:3]
 
-                # ④ 前月公開された動画の抽出と初動パフォーマンス分析
-                print("Fetching recent upload list...")
-                # Data API を使って前月公開された動画リストを BQ から引っ張るか、Analytics API 経由で取得
-                # ここでは BQ の `video_kpis` から前月公開された一意な動画リストを抽出する
-                import google.cloud.bigquery as bq_sdk
-                bq_raw_client = bq.client
-                target_videos_sql = f"""
-                SELECT DISTINCT
-                    video_id,
-                    MAX(title) AS title,
-                    MAX(published_at) AS published_at
-                FROM
-                    `{bq.project_id}.{bq.dataset_id}.video_kpis`
-                WHERE
-                    DATE(published_at) >= @start_date
-                    AND DATE(published_at) <= @end_date
-                GROUP BY
-                    video_id;
-                """
-                job_config = bq_sdk.QueryJobConfig(
-                    query_parameters=[
-                        bq_sdk.ScalarQueryParameter("start_date", "DATE", start_prev),
-                        bq_sdk.ScalarQueryParameter("end_date", "DATE", end_prev),
-                    ]
-                )
-                query_job = bq_raw_client.query(target_videos_sql, job_config=job_config)
-                uploaded_videos = [dict(row) for row in query_job.result()]
-
-                # 各動画の初動パフォーマンスを比較
+                # ④ 初動パフォーマンス分析
                 print(f"Analyzing initial performance for {len(uploaded_videos)} videos...")
                 for v in uploaded_videos[:5]:  # クォータ制限のため最大5動画に制限
                     v_id = v["video_id"]
@@ -260,19 +265,25 @@ def main():
                 print(f"::warning::Failed to fetch detailed analytics data: {oauth_err}")
                 print("Proceeding with BQ summary data only.")
 
-        # 4. Geminiへの分析プロンプト構築とアドバイス生成
+        # 5. Geminiへの分析プロンプト構築とアドバイス生成
         kpi_summary_text = f"""
 - 集計対象月: {summary_data['start_date']} 〜 {summary_data['end_date']}
 - 登録者数増分: +{summary_data['subscriber_growth']:,} 人 (現在: {summary_data['current_subscribers']:,} 人)
 - 総再生数増分: +{summary_data['view_growth']:,} 回 (現在: {summary_data['current_views']:,} 回)
 - いいね数増分: +{summary_data['like_growth']:,} 回 (現在: {summary_data['current_likes']:,} 回)
+- 当月公開動画数: {summary_data.get('uploaded_video_count', 0)} 本
+- 登録転換率 (CVR): {summary_data.get('cvr', 0.0):.2f}% (登録者増分 ÷ 再生数増分)
 """
         if prev_summary_data:
+            prev_sub_g = prev_summary_data.get('subscriber_growth', 0)
+            prev_view_g = prev_summary_data.get('view_growth', 0)
+            prev_cvr = (prev_sub_g / prev_view_g * 100) if prev_view_g > 0 else 0.0
             kpi_summary_text += f"""
 (前々月比較データ)
-- 前々月の登録者数増分: +{prev_summary_data['subscriber_growth']:,} 人
-- 前々月の総再生数増分: +{prev_summary_data['view_growth']:,} 回
-- 前々月のいいね数増分: +{prev_summary_data['like_growth']:,} 回
+- 前々月の登録者数増分: +{prev_sub_g:,} 人
+- 前々月の総再生数増分: +{prev_view_g:,} 回
+- 前々月のいいね数増分: +{prev_summary_data.get('like_growth', 0):,} 回
+- 前々月の登録転換率 (CVR): {prev_cvr:.2f}%
 """
 
         if top_videos_rankings.get("views"):

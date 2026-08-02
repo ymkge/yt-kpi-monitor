@@ -484,8 +484,8 @@ class SlackClient:
 
         # 前月比（％）の算出用ヘルパー
         def calc_ratio_text(curr_growth, prev_growth):
-            if not prev_growth or prev_growth == 0:
-                return "前月比: データなし"
+            if prev_growth is None or prev_growth == 0:
+                return "前月比: データ蓄積中"
             ratio = (curr_growth / prev_growth - 1) * 100
             sign = "+" if ratio >= 0 else ""
             return f"前月比: {sign}{ratio:.1f}%"
@@ -493,6 +493,8 @@ class SlackClient:
         sub_growth = summary_data["subscriber_growth"]
         view_growth = summary_data["view_growth"]
         like_growth = summary_data["like_growth"]
+        uploaded_count = summary_data.get("uploaded_video_count", 0)
+        cvr = summary_data.get("cvr", 0.0)
 
         prev_sub_growth = prev_summary_data["subscriber_growth"] if prev_summary_data else 0
         prev_view_growth = prev_summary_data["view_growth"] if prev_summary_data else 0
@@ -536,6 +538,14 @@ class SlackClient:
                     {
                         "type": "mrkdwn",
                         "text": f"*👍 いいね数増分*\n+{like_growth:,} 回\n_({like_ratio_text})_"
+                    },
+                    {
+                        "type": "mrkdwn",
+                        "text": f"*🎬 当月の公開動画*\n{uploaded_count} 本"
+                    },
+                    {
+                        "type": "mrkdwn",
+                        "text": f"*🎯 登録転換率 (CVR)*\n{cvr:.2f}%\n_(登録増 / 再生数増)_"
                     }
                 ]
             },
