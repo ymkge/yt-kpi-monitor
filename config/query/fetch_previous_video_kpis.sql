@@ -1,7 +1,12 @@
 SELECT
     video_id,
+    title,
+    views,
     likes,
-    title
+    subscribers_gained,
+    average_view_duration,
+    impressions,
+    ctr
 FROM
     `{{project_id}}.{{dataset_id}}.video_kpis`
 WHERE

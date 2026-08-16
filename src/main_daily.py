@@ -157,6 +157,40 @@ def main():
                             v_metrics["impressions"] = None
                             v_metrics["ctr"] = None
                         
+                        # 前日比差分の算出（安全ガード）
+                        prev_v = previous_video_kpis.get(v_id)
+                        diffs = {}
+                        
+                        def calc_diff(curr_val, prev_val):
+                            if curr_val is None or prev_val is None:
+                                return None
+                            return curr_val - prev_val
+
+                        if prev_v:
+                            diffs["views"] = calc_diff(v_metrics["views"], prev_v.get("views"))
+                            diffs["likes"] = calc_diff(v_metrics["likes"], prev_v.get("likes"))
+                            diffs["subscribers_gained"] = calc_diff(v_metrics["subscribers_gained"], prev_v.get("subscribers_gained"))
+                            diffs["average_view_duration"] = calc_diff(v_metrics["average_view_duration"], prev_v.get("average_view_duration"))
+                            diffs["impressions"] = calc_diff(v_metrics["impressions"], prev_v.get("impressions"))
+                            
+                            curr_ctr = v_metrics["ctr"]
+                            prev_ctr = prev_v.get("ctr")
+                            if curr_ctr is not None and prev_ctr is not None:
+                                diffs["ctr"] = round(curr_ctr - prev_ctr, 2)
+                            else:
+                                diffs["ctr"] = None
+                        else:
+                            diffs = {
+                                "views": None,
+                                "likes": None,
+                                "subscribers_gained": None,
+                                "average_view_duration": None,
+                                "impressions": None,
+                                "ctr": None
+                            }
+                        
+                        v_metrics["diff"] = diffs
+
                         recent_videos_kpis.append({
                             "video_id": v_id,
                             "title": v["title"],

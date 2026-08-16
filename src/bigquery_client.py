@@ -290,8 +290,13 @@ class BigQueryClient:
             for row in results:
                 row_dict = dict(row)
                 previous_video_kpis[row_dict["video_id"]] = {
-                    "likes": row_dict["likes"],
-                    "title": row_dict["title"]
+                    "title": row_dict.get("title"),
+                    "views": row_dict.get("views"),
+                    "likes": row_dict.get("likes"),
+                    "subscribers_gained": row_dict.get("subscribers_gained"),
+                    "average_view_duration": row_dict.get("average_view_duration"),
+                    "impressions": row_dict.get("impressions"),
+                    "ctr": row_dict.get("ctr")
                 }
             return previous_video_kpis
         except Exception as e:

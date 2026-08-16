@@ -200,59 +200,7 @@ class SlackClient:
 
         if not use_bot:
             # Webhookによるフォールバック送信 (地続きで動画アタッチメントも結合)
-            # アタッチメントの構築
-            attachments = []
-            if recent_videos_kpis:
-                for idx, video in enumerate(recent_videos_kpis, 1):
-                    metrics = video["metrics"]
-                    
-                    avg_sec = metrics.get("average_view_duration")
-                    if avg_sec is not None and avg_sec > 0:
-                        m, s = divmod(avg_sec, 60)
-                        duration_text = f"{m}分{s}秒" if m > 0 else f"{s}秒"
-                    else:
-                        duration_text = "集計中"
-
-                    sub_gained = metrics.get("subscribers_gained")
-                    sub_gained_text = f"+{sub_gained:,}" if sub_gained is not None else "集計中"
-
-                    red_views = metrics.get("red_views")
-                    red_views_text = f"Premium: {red_views:,} 回" if red_views is not None else "Premium: 集計中"
-
-                    impressions = metrics.get("impressions")
-                    ctr = metrics.get("ctr")
-                    
-                    if impressions is not None and impressions > 0 and ctr is not None:
-                        impressions_text = f"{impressions:,} 回"
-                        ctr_eval = self._get_ctr_evaluation(ctr)
-                        ctr_text = f"{ctr:.2f}%{ctr_eval}"
-                    else:
-                        impressions_text = "集計中 またはデータなし"
-                        ctr_text = "集計中 ⚪️ (データ反映待ち)"
-
-                    pub_time = video["published_at"].replace("T", " ").replace("Z", "")[:16]
-
-                    video_text = (
-                        f"📅 *公開日時*: {pub_time} (UTC)\n"
-                        f"👁️ *再生数*: {metrics.get('views', 0):,} 回 ({red_views_text})\n"
-                        f"👍 *いいね数*: {metrics.get('likes', 0):,}  /  👥 *登録者増*: {sub_gained_text}\n"
-                        f"⏱️ *平均視聴時間*: {duration_text}\n"
-                        f"📢 *インプレッション数*: {impressions_text}\n"
-                        f"🎯 *クリック率 (CTR)*: {ctr_text}"
-                    )
-
-                    attachments.append({
-                        "title": f"🎬 {idx}. {video['title']}",
-                        "color": "#70a1ff" if idx % 2 == 0 else "#1e90ff",
-                        "text": video_text,
-                        "mrkdwn_in": ["text"]
-                    })
-
-                attachments.append({
-                    "color": "#a4b0be",
-                    "footer": "※インプレッション数・CTRはReporting APIの仕様上、通常2〜3日前のデータが最新となります。その他の指標は通常1〜2日前のデータが最新です。"
-                })
-
+            attachments = self._build_recent_video_attachments(recent_videos_kpis)
             payload = {
                 "text": f"📊 *YouTube KPI Daily Alert: {channel_title}*",
                 "blocks": blocks,
@@ -263,6 +211,107 @@ class SlackClient:
             response = requests.post(self.webhook_url, json=payload)
             response.raise_for_status()
             return None
+
+    def _format_diff_str(self, diff_val, unit=""):
+        if diff_val is None:
+            return ""
+        sign = "+" if diff_val >= 0 else ""
+        return f" ({sign}{diff_val:,}{unit})"
+
+    def _format_duration_diff(self, diff_sec):
+        if diff_sec is None:
+            return ""
+        if diff_sec == 0:
+            return " (±0秒)"
+        sign = "+" if diff_sec > 0 else "-"
+        abs_sec = abs(diff_sec)
+        m, s = divmod(abs_sec, 60)
+        if m > 0 and s > 0:
+            time_str = f"{m}分{s}秒"
+        elif m > 0:
+            time_str = f"{m}分"
+        else:
+            time_str = f"{s}秒"
+        return f" ({sign}{time_str})"
+
+    def _format_ctr_diff(self, diff_ctr):
+        if diff_ctr is None:
+            return ""
+        sign = "+" if diff_ctr >= 0 else ""
+        return f" ({sign}{diff_ctr:.2f}%pt)"
+
+    def _build_recent_video_attachments(self, recent_videos_kpis):
+        if not recent_videos_kpis:
+            return []
+        
+        attachments = []
+        for idx, video in enumerate(recent_videos_kpis, 1):
+            metrics = video["metrics"]
+            diffs = metrics.get("diff", {})
+            
+            # 再生数
+            views = metrics.get("views", 0)
+            views_diff_str = self._format_diff_str(diffs.get("views"), unit=" 回")
+            red_views = metrics.get("red_views")
+            red_views_text = f"Premium: {red_views:,} 回" if red_views is not None else "Premium: 集計中"
+            
+            # いいね数 / 登録者増
+            likes = metrics.get("likes", 0)
+            likes_diff_str = self._format_diff_str(diffs.get("likes"))
+            
+            sub_gained = metrics.get("subscribers_gained")
+            sub_diff_str = self._format_diff_str(diffs.get("subscribers_gained"))
+            sub_gained_text = f"+{sub_gained:,}{sub_diff_str}" if sub_gained is not None else "集計中"
+            
+            # 平均視聴時間
+            avg_sec = metrics.get("average_view_duration")
+            dur_diff_str = self._format_duration_diff(diffs.get("average_view_duration"))
+            if avg_sec is not None and avg_sec > 0:
+                m, s = divmod(avg_sec, 60)
+                duration_text = f"{m}分{s}秒{dur_diff_str}" if m > 0 else f"{s}秒{dur_diff_str}"
+            else:
+                duration_text = "集計中"
+                
+            # インプレッション / CTR
+            impressions = metrics.get("impressions")
+            impr_diff_str = self._format_diff_str(diffs.get("impressions"), unit=" 回")
+            
+            ctr = metrics.get("ctr")
+            ctr_diff_str = self._format_ctr_diff(diffs.get("ctr"))
+            
+            if impressions is not None and impressions > 0 and ctr is not None:
+                impressions_text = f"{impressions:,} 回{impr_diff_str}"
+                ctr_eval = self._get_ctr_evaluation(ctr)
+                ctr_text = f"{ctr:.2f}%{ctr_diff_str}{ctr_eval}"
+            else:
+                impressions_text = "集計中 またはデータなし"
+                ctr_text = "集計中 ⚪️ (データ反映待ち)"
+                
+            pub_time = video["published_at"].replace("T", " ").replace("Z", "")[:16]
+            raw_title = video.get("title", "")
+            truncated_title = raw_title[:37] + "..." if len(raw_title) > 40 else raw_title
+
+            video_text = (
+                f"📅 *公開日時*: {pub_time} (UTC)\n"
+                f"👁️ *再生数*: {views:,} 回{views_diff_str} ({red_views_text})\n"
+                f"👍 *いいね数*: {likes:,}{likes_diff_str}  /  👥 *登録者増*: {sub_gained_text}\n"
+                f"⏱️ *平均視聴時間*: {duration_text}\n"
+                f"📢 *インプレッション数*: {impressions_text}\n"
+                f"🎯 *クリック率 (CTR)*: {ctr_text}"
+            )
+
+            attachments.append({
+                "title": f"🎬 {idx}. {truncated_title}",
+                "color": "#70a1ff" if idx % 2 == 0 else "#1e90ff",
+                "text": video_text,
+                "mrkdwn_in": ["text"]
+            })
+
+        attachments.append({
+            "color": "#a4b0be",
+            "footer": "※インプレッション数・CTRはReporting APIの仕様上、通常2〜3日前のデータが最新となります。その他の指標は通常1〜2日前のデータが最新です。"
+        })
+        return attachments
 
     def send_recent_video_kpis_to_thread(self, thread_ts, recent_videos_kpis):
         """
@@ -276,56 +325,7 @@ class SlackClient:
             "Content-Type": "application/json; charset=utf-8"
         }
 
-        attachments = []
-        for idx, video in enumerate(recent_videos_kpis, 1):
-            metrics = video["metrics"]
-            
-            avg_sec = metrics.get("average_view_duration")
-            if avg_sec is not None and avg_sec > 0:
-                m, s = divmod(avg_sec, 60)
-                duration_text = f"{m}分{s}秒" if m > 0 else f"{s}秒"
-            else:
-                duration_text = "集計中"
-
-            sub_gained = metrics.get("subscribers_gained")
-            sub_gained_text = f"+{sub_gained:,}" if sub_gained is not None else "集計中"
-
-            red_views = metrics.get("red_views")
-            red_views_text = f"Premium: {red_views:,} 回" if red_views is not None else "Premium: 集計中"
-
-            impressions = metrics.get("impressions")
-            ctr = metrics.get("ctr")
-            
-            if impressions is not None and impressions > 0 and ctr is not None:
-                impressions_text = f"{impressions:,} 回"
-                ctr_eval = self._get_ctr_evaluation(ctr)
-                ctr_text = f"{ctr:.2f}%{ctr_eval}"
-            else:
-                impressions_text = "集計中 またはデータなし"
-                ctr_text = "集計中 ⚪️ (データ反映待ち)"
-
-            pub_time = video["published_at"].replace("T", " ").replace("Z", "")[:16]
-
-            video_text = (
-                f"📅 *公開日時*: {pub_time} (UTC)\n"
-                f"👁️ *再生数*: {metrics.get('views', 0):,} 回 ({red_views_text})\n"
-                f"👍 *いいね数*: {metrics.get('likes', 0):,}  /  👥 *登録者増*: {sub_gained_text}\n"
-                f"⏱️ *平均視聴時間*: {duration_text}\n"
-                f"📢 *インプレッション数*: {impressions_text}\n"
-                f"🎯 *クリック率 (CTR)*: {ctr_text}"
-            )
-
-            attachments.append({
-                "title": f"🎬 {idx}. {video['title']}",
-                "color": "#70a1ff" if idx % 2 == 0 else "#1e90ff",
-                "text": video_text,
-                "mrkdwn_in": ["text"]
-            })
-
-        attachments.append({
-            "color": "#a4b0be",
-            "footer": "※インプレッション数・CTRはReporting APIの仕様上、通常2〜3日前のデータが最新となります。その他の指標は通常1〜2日前のデータが最新です。"
-        })
+        attachments = self._build_recent_video_attachments(recent_videos_kpis)
 
         payload = {
             "channel": self.channel,
