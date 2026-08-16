@@ -42,8 +42,9 @@ def main():
         print("Saving current KPI to BigQuery...")
         bq.save_kpi(current_kpi)
 
-        # 3.5. いいね数が増加した動画の抽出と分類
+        # 3.5. いいね数の増減があった動画の抽出と分類
         increased_like_videos = []
+        decreased_like_videos = []
         from datetime import datetime, timezone, timedelta
         JST = timezone(timedelta(hours=9))
         now_jst = datetime.now(JST)
@@ -89,6 +90,18 @@ def main():
                         "is_new": is_new,
                         "published_at": v["published_at"]
                     })
+                elif diff < 0:
+                    decreased_like_videos.append({
+                        "video_id": v_id,
+                        "title": v["title"],
+                        "diff": diff,
+                        "current_likes": current_likes,
+                        "is_new": is_new,
+                        "published_at": v["published_at"]
+                    })
+
+        # 減少幅が大きい順（例: -5, -2, -1）にソート
+        decreased_like_videos.sort(key=lambda x: x["diff"])
 
         # 4. 直近14日以内に公開された動画のKPIを取得
         recent_videos_kpis = []
@@ -194,7 +207,8 @@ def main():
             current_kpi,
             previous_kpi,
             recent_videos_kpis if recent_videos_kpis else None,
-            increased_like_videos if increased_like_videos else None
+            increased_like_videos if increased_like_videos else None,
+            decreased_like_videos if decreased_like_videos else None
         )
 
         

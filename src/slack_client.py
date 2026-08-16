@@ -43,7 +43,44 @@ class SlackClient:
         else:
             return " 🔴 *要改善* (ターゲット層に届いていない)"
 
-    def send_kpi_alert(self, current_kpi, previous_kpi=None, recent_videos_kpis=None, increased_like_videos=None):
+    def _build_like_diff_block(self, title_header, video_list, is_increase=True, max_display=5):
+        """
+        いいねの増減があった動画リストからSlack Block Kitセクションを生成する。
+        表示上限(max_display)とタイトルのトリミングを行ってAPI制限超過を防止する。
+        """
+        if not video_list:
+            return None
+        
+        # 差分の絶対値が大きい順に並び替え
+        sorted_list = sorted(video_list, key=lambda x: abs(x["diff"]), reverse=True)
+        display_list = sorted_list[:max_display]
+        remaining_count = len(sorted_list) - max_display
+        
+        details = []
+        for v in display_list:
+            tag = "🆕 [新規]" if v.get("is_new") else "🎬 [既存]"
+            pub_date = v["published_at"].split("T")[0] if "T" in v.get("published_at", "") else ""
+            
+            # タイトルが長い場合は40文字に切り捨て (Slack APIの文字数オーバー制限対策)
+            raw_title = v.get("title", "")
+            truncated_title = raw_title[:37] + "..." if len(raw_title) > 40 else raw_title
+            
+            diff_str = f"+{v['diff']:,}" if is_increase else f"{v['diff']:,}"
+            details.append(f"• {tag} *{truncated_title}* (公開: {pub_date})\n   ↳ 前日比 *{diff_str}* (現在: {v['current_likes']:,})")
+        
+        if remaining_count > 0:
+            action_label = "増加" if is_increase else "減少"
+            details.append(f"_...他 {remaining_count} 件の動画でいいねが{action_label}_")
+        
+        return {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*{title_header}*\n" + "\n".join(details)
+            }
+        }
+
+    def send_kpi_alert(self, current_kpi, previous_kpi=None, recent_videos_kpis=None, increased_like_videos=None, decreased_like_videos=None):
         """
         KPIの増分を含めたSlackアラートを送信する。
         Bot Tokenが利用可能な場合は、親メッセージ(Block Kit)を送信し、スレID(ts)を返す。
@@ -107,23 +144,15 @@ class SlackClient:
             }
         ]
 
-        if increased_like_videos:
-            like_details = []
-            for v in increased_like_videos:
-                tag = "🆕 [新規]" if v.get("is_new") else "🎬 [既存]"
-                pub_date = v["published_at"].split("T")[0] if "T" in v["published_at"] else ""
-                like_details.append(f"• {tag} *{v['title']}* (公開: {pub_date})\n   ↳ 前日比 *+{v['diff']:,}* (現在: {v['current_likes']:,})")
-            
-            blocks.append({
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": "*👍 いいね数が増加した動画*\n" + "\n".join(like_details)
-                }
-            })
-            blocks.append({
-                "type": "divider"
-            })
+        inc_block = self._build_like_diff_block("👍 いいね数が増加した動画", increased_like_videos, is_increase=True)
+        if inc_block:
+            blocks.append(inc_block)
+            blocks.append({"type": "divider"})
+
+        dec_block = self._build_like_diff_block("👎 いいねが減少（取り消し）した動画", decreased_like_videos, is_increase=False)
+        if dec_block:
+            blocks.append(dec_block)
+            blocks.append({"type": "divider"})
 
         # 2. 送信方法の判別（Bot Token優先、Webhookフォールバック）
         use_bot = all([self.bot_token, self.channel])
