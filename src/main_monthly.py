@@ -312,7 +312,11 @@ def main():
                 traffic_text += f"- {s['source_type']}: {pct:.1f}% ({s['views']:,}回)\n"
 
         print("Generating monthly strategy advice using Gemini API...")
-        advice = gemini.generate_monthly_strategy_advice(kpi_summary_text, audience_text, traffic_text)
+        try:
+            advice = gemini.generate_monthly_strategy_advice(kpi_summary_text, audience_text, traffic_text)
+        except Exception as e:
+            print(f"::warning::Gemini API failed to generate monthly advice: {e}")
+            advice = "🤖 *Gemini AI 月次戦略アドバイス*\n現在Gemini APIが高負荷または一時的な障害のため、AIアドバイスの生成をスキップしましたみゃ。"
 
         # 5. Slackへの月次レポート送信
         print("Sending monthly report to Slack...")
