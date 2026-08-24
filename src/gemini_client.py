@@ -1,9 +1,17 @@
 import os
 import time
+import socket
+import http.client
 from google import genai
 from google.genai import types
 from google.genai.errors import APIError
 from dotenv import load_dotenv
+
+try:
+    import httpx
+    HTTPX_ERRORS = (httpx.RequestError, httpx.HTTPError)
+except ImportError:
+    HTTPX_ERRORS = ()
 
 load_dotenv()
 
@@ -11,6 +19,43 @@ try:
     WEEKLY_VIEW_THRESHOLD = int(os.getenv("WEEKLY_VIEW_THRESHOLD", 1000))
 except ValueError:
     WEEKLY_VIEW_THRESHOLD = 1000
+
+def _is_retryable_exception(e):
+    """
+    リトライ対象となる一時的APIエラーおよびネットワーク通信切断例外かを判定する。
+    """
+    # 1. APIError の判定
+    if isinstance(e, APIError):
+        # 429: クォータ超過, 500/502/503/504: サーバー一時的エラー
+        return e.code in [429, 500, 502, 503, 504]
+    
+    # 2. 決定的なクライアントエラー (400, 401, 403, 404 等) の除外
+    if hasattr(e, "status_code") and getattr(e, "status_code") in [400, 401, 403, 404]:
+        return False
+
+    # 3. 通信・接続例外クラスの判定
+    retryable_exception_types = (
+        ConnectionError,
+        socket.error,
+        TimeoutError,
+        http.client.HTTPException,
+    ) + HTTPX_ERRORS
+    if isinstance(e, retryable_exception_types):
+        return True
+
+    # 4. エラーメッセージのキーワード判定
+    msg = str(e).lower()
+    retry_keywords = [
+        "server disconnected",
+        "remotedisconnected",
+        "connection closed",
+        "connection reset",
+        "timed out",
+        "broken pipe",
+        "socket",
+        "network"
+    ]
+    return any(kw in msg for kw in retry_keywords)
 
 class GeminiClient:
     def __init__(self, api_key=None):
@@ -24,7 +69,7 @@ class GeminiClient:
         KPIの集計データに基づき、Gemini APIを用いて戦略アドバイスを生成する。
         """
         prompt = f"""
-あなたはYouTube運用に精通した優秀なデータアナリストであり、親しみやすい「黒猫のキャラクター（名前：クロ）」です。
+あなたはいYouTube運用に精通した優秀なデータアナリストであり、親しみやすい「黒猫のキャラクター（名前：クロ）」です。
 黒猫のキャラクターとしてのアイデンティティで、以下の直近1週間のYouTubeチャンネルのKPIデータに基づき、分析と翌週に向けた戦略アドバイスを提供してください。
 口調、性格ルールは以下。
 クロの口調・性格ルール語尾：「〜みゃ」「〜だみゃ」といった独自の猫語を話します。
@@ -69,32 +114,7 @@ class GeminiClient:
 - 再生数とチャンネル登録者数を伸ばすためには、CTR上位の動画10本ほどで「CTR 3%以上」を達成することが最優先の目標であること。
 - アルゴリズム評価を回復させ、新規視聴者にレコメンドされるための具体的なサムネイル改善や初動の工夫。
 """
-
-        max_retries = 3
-        retry_delay = 10  # 429エラー時の初回待機時間（秒）
-        # 環境変数からモデル名を取得し、未設定または空文字列の場合は最新のFlashモデル（エイリアス）をデフォルトにする
-        model_name = os.getenv("GEMINI_MODEL") or "gemini-flash-latest"
-
-        for attempt in range(max_retries):
-            try:
-                response = self.client.models.generate_content(
-                    model=model_name,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        temperature=0.7,
-                    )
-                )
-                return response.text
-            except APIError as e:
-                # 一時的なAPIエラー（429:クォータ超過, 503:一時的利用不可, 504:タイムアウト）に対するリトライ
-                if e.code in [429, 503, 504] and attempt < max_retries - 1:
-                    print(f"Gemini API error ({e.code}). Retrying in {retry_delay}s... (Attempt {attempt + 1}/{max_retries})")
-                    time.sleep(retry_delay)
-                    retry_delay *= 2  # 指数バックオフ
-                else:
-                    raise e
-            except Exception as e:
-                raise e
+        return self._generate_with_retry(prompt)
 
     def generate_monthly_strategy_advice(self, kpi_summary_text, audience_text, traffic_text):
         """
@@ -172,8 +192,8 @@ class GeminiClient:
         return self._generate_with_retry(prompt)
 
     def _generate_with_retry(self, prompt):
-        max_retries = 3
-        retry_delay = 10
+        max_retries = 4
+        retry_delay = 5
         model_name = os.getenv("GEMINI_MODEL") or "gemini-flash-latest"
 
         for attempt in range(max_retries):
@@ -186,14 +206,12 @@ class GeminiClient:
                     )
                 )
                 return response.text
-            except APIError as e:
-                if e.code in [429, 503, 504] and attempt < max_retries - 1:
-                    print(f"Gemini API error ({e.code}). Retrying in {retry_delay}s... (Attempt {attempt + 1}/{max_retries})")
+            except Exception as e:
+                if _is_retryable_exception(e) and attempt < max_retries - 1:
+                    print(f"::warning::Gemini API / Network error ({e}). Retrying in {retry_delay}s... (Attempt {attempt + 1}/{max_retries})")
                     time.sleep(retry_delay)
                     retry_delay *= 2
                 else:
                     raise e
-            except Exception as e:
-                raise e
 
 
