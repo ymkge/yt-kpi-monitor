@@ -192,26 +192,55 @@ class GeminiClient:
         return self._generate_with_retry(prompt)
 
     def _generate_with_retry(self, prompt):
-        max_retries = 4
-        retry_delay = 5
-        model_name = os.getenv("GEMINI_MODEL") or "gemini-flash-latest"
+        primary_model = os.getenv("GEMINI_MODEL") or "gemini-flash-latest"
+        fallback_model = os.getenv("GEMINI_FALLBACK_MODEL") or "gemini-flash-lite-latest"
+        fallback_candidates = [fallback_model]
+        
+        # 順序を保持した動的重複排除
+        models = []
+        for m in [primary_model] + fallback_candidates:
+            if m and m not in models:
+                models.append(m)
 
-        for attempt in range(max_retries):
-            try:
-                response = self.client.models.generate_content(
-                    model=model_name,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        temperature=0.7,
+        delays = [10, 20, 30]
+        max_attempts_per_model = 2
+        total_attempt = 0
+        last_exception = None
+
+        for model_idx, model_name in enumerate(models):
+            for attempt_in_model in range(max_attempts_per_model):
+                total_attempt += 1
+                try:
+                    response = self.client.models.generate_content(
+                        model=model_name,
+                        contents=prompt,
+                        config=types.GenerateContentConfig(
+                            temperature=0.7,
+                        )
                     )
-                )
-                return response.text
-            except Exception as e:
-                if _is_retryable_exception(e) and attempt < max_retries - 1:
-                    print(f"::warning::Gemini API / Network error ({e}). Retrying in {retry_delay}s... (Attempt {attempt + 1}/{max_retries})")
-                    time.sleep(retry_delay)
-                    retry_delay *= 2
-                else:
-                    raise e
+                    return response.text
+                except Exception as e:
+                    last_exception = e
+                    if not _is_retryable_exception(e):
+                        raise e
+
+                    # 最終試行（全モデル・全回数終了）の場合は警告を出力してスロー
+                    if model_idx == len(models) - 1 and attempt_in_model == max_attempts_per_model - 1:
+                        print(f"::warning::Gemini API / Network error on final attempt with model '{model_name}': {e}")
+                        raise e
+
+                    delay = delays[min(total_attempt - 1, len(delays) - 1)]
+                    
+                    # 次の試行がモデル切り替えかどうかの判定
+                    if attempt_in_model == max_attempts_per_model - 1 and model_idx < len(models) - 1:
+                        next_model = models[model_idx + 1]
+                        print(f"::warning::Gemini API error on model '{model_name}' ({e}). Retrying with fallback model '{next_model}' in {delay}s... (Total Attempt {total_attempt})")
+                    else:
+                        print(f"::warning::Gemini API / Network error on model '{model_name}' ({e}). Retrying in {delay}s... (Attempt {attempt_in_model + 1}/{max_attempts_per_model}, Total Attempt {total_attempt})")
+                    
+                    time.sleep(delay)
+        
+        if last_exception:
+            raise last_exception
 
 
