@@ -313,37 +313,10 @@ class SlackClient:
         })
         return attachments
 
-    def send_recent_video_kpis_to_thread(self, thread_ts, recent_videos_kpis):
-        """
-        直近動画のKPI一覧を、指定された親メッセージのスレッドに投稿する。
-        """
-        if not self.bot_token or not self.channel or not recent_videos_kpis:
-            return
-
-        headers = {
-            "Authorization": f"Bearer {self.bot_token}",
-            "Content-Type": "application/json; charset=utf-8"
-        }
-
-        attachments = self._build_recent_video_attachments(recent_videos_kpis)
-
-        payload = {
-            "channel": self.channel,
-            "thread_ts": thread_ts,
-            "attachments": attachments,
-            "username": "クロBOT",
-            "icon_emoji": ":kuro:"
-        }
-        
-        response = requests.post(
-            "https://slack.com/api/chat.postMessage",
-            headers=headers,
-            json=payload
-        )
-        response.raise_for_status()
-        res_json = response.json()
-        if not res_json.get("ok"):
-            raise ValueError(f"Slack API error: {res_json.get('error')}")
+    def _format_signed_val(self, val, unit=""):
+        if val is None:
+            return f"0{unit}"
+        return f"{val:+,}{unit}"
 
     def send_weekly_report(self, summary_data, advice_text, top_views_videos=None, top_likes_videos=None, top_ctr_videos=None):
         """
@@ -361,7 +334,7 @@ class SlackClient:
                 "type": "header",
                 "text": {
                     "type": "plain_text",
-                    "text": "📅 YouTube 週次戦略レポート",
+                    "text": "📊 YouTube 週次戦略レポート",
                     "emoji": True
                 }
             },
@@ -380,15 +353,15 @@ class SlackClient:
                 "fields": [
                     {
                         "type": "mrkdwn",
-                        "text": f"*👥 登録者数増分*\n+{summary_data['subscriber_growth']:,} (現在: {summary_data['current_subscribers']:,} 人)"
+                        "text": f"*👥 登録者数増分*\n{self._format_signed_val(summary_data['subscriber_growth'])} (現在: {summary_data['current_subscribers']:,} 人)"
                     },
                     {
                         "type": "mrkdwn",
-                        "text": f"*👁️ 再生数増分*\n+{summary_data['view_growth']:,} 回"
+                        "text": f"*👁️ 再生数増分*\n{self._format_signed_val(summary_data['view_growth'], ' 回')}"
                     },
                     {
                         "type": "mrkdwn",
-                        "text": f"*👍 いいね数増分*\n+{summary_data['like_growth']:,} 回"
+                        "text": f"*👍 いいね数増分*\n{self._format_signed_val(summary_data['like_growth'], ' 回')}"
                     }
                 ]
             },
@@ -527,8 +500,8 @@ class SlackClient:
 
         # 前月比（％）の算出用ヘルパー
         def calc_ratio_text(curr_growth, prev_growth):
-            if prev_growth is None or prev_growth == 0:
-                return "前月比: データ蓄積中"
+            if prev_growth is None or prev_growth <= 0:
+                return "前月比: --"
             ratio = (curr_growth / prev_growth - 1) * 100
             sign = "+" if ratio >= 0 else ""
             return f"前月比: {sign}{ratio:.1f}%"
@@ -572,15 +545,15 @@ class SlackClient:
                 "fields": [
                     {
                         "type": "mrkdwn",
-                        "text": f"*👥 登録者数増分*\n+{sub_growth:,} 人\n_({sub_ratio_text})_\n現在: {summary_data['current_subscribers']:,} 人"
+                        "text": f"*👥 登録者数増分*\n{self._format_signed_val(sub_growth, ' 人')}\n_({sub_ratio_text})_\n現在: {summary_data['current_subscribers']:,} 人"
                     },
                     {
                         "type": "mrkdwn",
-                        "text": f"*👁️ 再生数増分*\n+{view_growth:,} 回\n_({view_ratio_text})_"
+                        "text": f"*👁️ 再生数増分*\n{self._format_signed_val(view_growth, ' 回')}\n_({view_ratio_text})_"
                     },
                     {
                         "type": "mrkdwn",
-                        "text": f"*👍 いいね数増分*\n+{like_growth:,} 回\n_({like_ratio_text})_"
+                        "text": f"*👍 いいね数増分*\n{self._format_signed_val(like_growth, ' 回')}\n_({like_ratio_text})_"
                     },
                     {
                         "type": "mrkdwn",
@@ -588,7 +561,7 @@ class SlackClient:
                     },
                     {
                         "type": "mrkdwn",
-                        "text": f"*🎯 登録転換率 (CVR)*\n{cvr:.2f}%\n_(登録増 / 再生数増)_"
+                        "text": f"*🎯 登録転換率 (CVR)*\n{cvr:.2f}%{' (※純減)' if sub_growth < 0 else ''}\n_(登録増 / 再生数増)_"
                     }
                 ]
             },

@@ -266,24 +266,32 @@ def main():
                 print("Proceeding with BQ summary data only.")
 
         # 5. Geminiへの分析プロンプト構築とアドバイス生成
+        sub_g = summary_data['subscriber_growth']
+        view_g = summary_data['view_growth']
+        like_g = summary_data['like_growth']
+        cvr_val = summary_data.get('cvr', 0.0)
+        cvr_note = " (※登録解除が上回り純減)" if sub_g < 0 else ""
+
         kpi_summary_text = f"""
 - 集計対象月: {summary_data['start_date']} 〜 {summary_data['end_date']}
-- 登録者数増分: +{summary_data['subscriber_growth']:,} 人 (現在: {summary_data['current_subscribers']:,} 人)
-- 総再生数増分: +{summary_data['view_growth']:,} 回 (現在: {summary_data['current_views']:,} 回)
-- いいね数増分: +{summary_data['like_growth']:,} 回 (現在: {summary_data['current_likes']:,} 回)
+- 登録者数増分: {sub_g:+,} 人 (現在: {summary_data['current_subscribers']:,} 人)
+- 総再生数増分: {view_g:+,} 回 (現在: {summary_data['current_views']:,} 回)
+- いいね数増分: {like_g:+,} 回 (現在: {summary_data['current_likes']:,} 回)
 - 当月公開動画数: {summary_data.get('uploaded_video_count', 0)} 本
-- 登録転換率 (CVR): {summary_data.get('cvr', 0.0):.2f}% (登録者増分 ÷ 再生数増分)
+- 登録転換率 (CVR): {cvr_val:.2f}%{cvr_note} (登録者増分 ÷ 再生数増分)
 """
         if prev_summary_data:
             prev_sub_g = prev_summary_data.get('subscriber_growth', 0)
             prev_view_g = prev_summary_data.get('view_growth', 0)
+            prev_like_g = prev_summary_data.get('like_growth', 0)
             prev_cvr = (prev_sub_g / prev_view_g * 100) if prev_view_g > 0 else 0.0
+            prev_cvr_note = " (※登録解除が上回り純減)" if prev_sub_g < 0 else ""
             kpi_summary_text += f"""
 (前々月比較データ)
-- 前々月の登録者数増分: +{prev_sub_g:,} 人
-- 前々月の総再生数増分: +{prev_view_g:,} 回
-- 前々月のいいね数増分: +{prev_summary_data.get('like_growth', 0):,} 回
-- 前々月の登録転換率 (CVR): {prev_cvr:.2f}%
+- 前々月の登録者数増分: {prev_sub_g:+,} 人
+- 前々月の総再生数増分: {prev_view_g:+,} 回
+- 前々月のいいね数増分: {prev_like_g:+,} 回
+- 前々月の登録転換率 (CVR): {prev_cvr:.2f}%{prev_cvr_note}
 """
 
         if top_videos_rankings.get("views"):

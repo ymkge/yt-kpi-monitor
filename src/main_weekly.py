@@ -119,11 +119,15 @@ def main():
             print("::warning::YouTube Analytics OAuth credentials are not fully set. Skipping video ranking data.")
 
         # 3. Geminiに送るテキストを整形
+        sub_g = summary_data['subscriber_growth']
+        view_g = summary_data['view_growth']
+        like_g = summary_data['like_growth']
+
         kpi_summary_text = f"""
 - 期間: {summary_data['start_date']} 〜 {summary_data['end_date']}
-- 登録者数増加: +{summary_data['subscriber_growth']:,} (現在: {summary_data['current_subscribers']:,})
-- 総再生数増加: +{summary_data['view_growth']:,} (現在: {summary_data['current_views']:,})
-- いいね数増加: +{summary_data['like_growth']:,} (現在: {summary_data['current_likes']:,})
+- 登録者数増減: {sub_g:+,} 人 (現在: {summary_data['current_subscribers']:,} 人)
+- 総再生数増減: {view_g:+,} 回 (現在: {summary_data['current_views']:,} 回)
+- いいね数増減: {like_g:+,} 回 (現在: {summary_data['current_likes']:,} 回)
 """
 
         # ランキング情報がある場合はプロンプトに補足
