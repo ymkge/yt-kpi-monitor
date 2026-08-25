@@ -13,6 +13,8 @@ try:
 except ImportError:
     HTTPX_ERRORS = ()
 
+from src.knowledge_manager import KnowledgeManager
+
 load_dotenv()
 
 try:
@@ -63,13 +65,14 @@ class GeminiClient:
         if not self.api_key:
             raise ValueError("GEMINI_API_KEY is not set.")
         self.client = genai.Client(api_key=self.api_key)
+        self.knowledge_mgr = KnowledgeManager()
 
-    def generate_strategy_advice(self, kpi_summary_text, view_growth=None):
+    def generate_strategy_advice(self, kpi_summary_text, view_growth=None, current_subscribers=None):
         """
         KPIの集計データに基づき、Gemini APIを用いて戦略アドバイスを生成する。
         """
         prompt = f"""
-あなたはいYouTube運用に精通した優秀なデータアナリストであり、親しみやすい「黒猫のキャラクター（名前：クロ）」です。
+あなたはYouTube運用に精通した優秀なデータアナリストであり、親しみやすい「黒猫のキャラクター（名前：クロ）」です。
 黒猫のキャラクターとしてのアイデンティティで、以下の直近1週間のYouTubeチャンネルのKPIデータに基づき、分析と翌週に向けた戦略アドバイスを提供してください。
 口調、性格ルールは以下。
 クロの口調・性格ルール語尾：「〜みゃ」「〜だみゃ」といった独自の猫語を話します。
@@ -114,9 +117,17 @@ class GeminiClient:
 - 再生数とチャンネル登録者数を伸ばすためには、CTR上位の動画10本ほどで「CTR 3%以上」を達成することが最優先の目標であること。
 - アルゴリズム評価を回復させ、新規視聴者にレコメンドされるための具体的なサムネイル改善や初動の工夫。
 """
+        # ナレッジベースからの関連知識の抽出・結合
+        knowledge_text = self.knowledge_mgr.get_relevant_knowledge(current_subscribers)
+        if knowledge_text:
+            prompt += f"""
+# 専門運用ナレッジ・アドバイス方針（最優先で考慮・反映してください）
+※以下の専門ナレッジ・運用方針を前提知識として踏まえた上で、クロのキャラクターとして分析とアドバイスを行ってください。
+{knowledge_text}
+"""
         return self._generate_with_retry(prompt)
 
-    def generate_monthly_strategy_advice(self, kpi_summary_text, audience_text, traffic_text):
+    def generate_monthly_strategy_advice(self, kpi_summary_text, audience_text, traffic_text, current_subscribers=None):
         """
         月次KPIデータ、視聴者分析、トラフィックソースデータに基づき、Gemini APIを用いて月次戦略アドバイスを生成する。
         """
@@ -160,6 +171,14 @@ class GeminiClient:
 - Slack用の太字表記は `*太字*` (アスタリスク1個) を使用し、`**` や `#` 見出し記法は絶対に使用しないでください。
 - 箇条書きの各項目は、最大でも2行以内に収めるように簡潔に要約してください。
 - 抽象的なアドバイスは避け、データに基づいた実践的な内容にしてください。
+"""
+        # ナレッジベースからの関連知識の抽出・結合
+        knowledge_text = self.knowledge_mgr.get_relevant_knowledge(current_subscribers)
+        if knowledge_text:
+            prompt += f"""
+# 専門運用ナレッジ・アドバイス方針（最優先で考慮・反映してください）
+※以下の専門ナレッジ・運用方針を前提知識として踏まえた上で、クロのキャラクターとして分析とアドバイスを行ってください。
+{knowledge_text}
 """
         return self._generate_with_retry(prompt)
 

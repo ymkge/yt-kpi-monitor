@@ -321,7 +321,12 @@ def main():
 
         print("Generating monthly strategy advice using Gemini API...")
         try:
-            advice = gemini.generate_monthly_strategy_advice(kpi_summary_text, audience_text, traffic_text)
+            advice = gemini.generate_monthly_strategy_advice(
+                kpi_summary_text,
+                audience_text,
+                traffic_text,
+                current_subscribers=summary_data.get('current_subscribers')
+            )
         except Exception as e:
             print(f"::warning::Gemini API failed to generate monthly advice: {e}")
             advice = "🤖 *Gemini AI 月次戦略アドバイス*\n現在Gemini APIが高負荷または一時的な障害のため、AIアドバイスの生成をスキップしましたみゃ。"
