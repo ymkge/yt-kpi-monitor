@@ -9,22 +9,31 @@ GitHub ActionsとGoogle Cloudを活用することで、完全無料枠（Free T
 *   **日次KPIアラート（Daily Monitor）**
     *   毎日 19:00 (JST) に最新のチャンネル統計を取得。
     *   前回実行時からの差分（登録者数やいいね数の増加）を検知し、Slackへ通知。
+    *   **直近14日動画の詳細KPI＆前日比表示**
+        *   直近14日以内に公開された動画の各KPI（再生数、いいね数、登録者増、平均視聴時間、インプレッション数、CTR）において、前回計測時からの前日比増減（例: `+150 回`, `+1分15秒`, `+0.15%pt`）を分かりやすく表記（#54）。
+        *   いいね数が減少（取り消し）された動画の自動検出・通知機能（#53）。
     *   **動画のクリック率 (CTR) 改善アラート表示（音楽BGMチャンネル向け調整）**
-        *   直近14日以内に公開された動画に対し、CTRの値に応じた評価ラベル（絵文字＋アクション指標）を付与。
+        *   CTRの値に応じた評価ラベル（絵文字＋アクション指標）を付与。
         *   判定閾値: `🟢 優秀 (4.0%以上)`, `🟡 標準 (2.0%以上)`, `🔴 要改善 (2.0%未満)`。
         *   APIデータ遅延や公開直後のデータ不足時には `⚪️ 集計中 (データ反映待ち)` と表示し誤判定を防止。
-    *   取得したデータを Google BigQuery へ永久蓄積。
-*   **週次AI戦略レポート（Weekly Advisor）**
-    *   毎週月曜 0:00 (JST) に直近1週間のデータを集計。
-    *   集計データを元に、Gemini 3.5 Flashが「現状分析」「良かった点」「改善案」「翌週のアクション」を生成。
-    *   データアナリスト視点のサマリレポートとしてSlackへ自動投稿。
+    *   取得したデータを Google BigQuery へ永久蓄積（`ARRAY_AGG` + `STRUCT` による直近現在値および純増減数の高精度選出 #59）。
+*   **週次・月次AI戦略レポート（Weekly & Monthly Advisor）**
+    *   毎週月曜 0:00 (JST) および毎月1日 0:00 (JST) に集計を実行。
+    *   **ナレッジベース連携によるAI分析精度の向上 (RAG Engine #51)**
+        *   `config/knowledge/` ディレクトリに置かれた運用知識（Markdownファイル）を自動読み込み。
+        *   現在のチャンネル登録者数フェーズ（例: 100人未満、1,000人未満など）にベストマッチするナレッジを自働抽出し、Gemini のプロンプトへ注入。
+        *   `.md` ファイルを追加・更新するだけで、コード修正なしで自由にナレッジを拡張可能。
+    *   **Gemini API の高レジリエンス＆耐障害性 (#57)**
+        *   Google AI サーバー混雑（503）発生時に、`gemini-flash-latest` から `gemini-flash-lite-latest` へ自動フォールバックして再試行。
+        *   万が一全モデルで AI 生成が応答しない場合でも、基本数値レポートや動画ランキングを安全に完走して Slack に受領させる安全装置を搭載。
 
 ## アーキテクチャ構成
 *   **実行環境**: GitHub Actions (cronスケジューラ)
 *   **データソース**: YouTube Data API v3 & YouTube Analytics API v2
 *   **データウェアハウス**: Google BigQuery (Sandbox環境 / Batch Load方式)
-*   **AIエンジン**: Gemini 3.5 Flash (Google AI Studio)
-*   **通知先**: Slack (Incoming Webhook)
+*   **AIエンジン**: Gemini API (`gemini-flash-latest` / `gemini-flash-lite-latest`)
+*   **ナレッジベース (RAG)**: ディレクトリ駆動型ナレッジエンジン (`config/knowledge/*.md`)
+*   **通知先**: Slack (Incoming Webhook & Bot Token スレッド投稿)
 
 ## セットアップ手順
 
@@ -50,60 +59,24 @@ GitHub ActionsとGoogle Cloudを活用することで、完全無料枠（Free T
 | `GCP_DATASET_ID` | BigQuery データセット名 |
 | `GCP_SERVICE_ACCOUNT_KEY` | サービスアカウントのJSONキー内容すべて（改行含めそのまま） |
 | `GEMINI_API_KEY` | Google AI Studio のAPIキー |
-| `GEMINI_MODEL` | 使用するGeminiモデル名（任意、未指定時は `gemini-flash-latest`。モデルの自動更新に伴い挙動が崩れる場合は、特定の静的モデル名を設定して固定することを推奨します） |
+| `GEMINI_MODEL` | プライマリGeminiモデル名（任意、未指定時は `gemini-flash-latest`） |
+| `GEMINI_FALLBACK_MODEL` | フォールバックGeminiモデル名（任意、未指定時は `gemini-flash-lite-latest`） |
 | `SLACK_WEBHOOK_URL` | Slack Webhook URL |
 
-### 3. YouTube Analytics API (OAuth2) セットアップ
-週次レポートで動画ランキング（再生数・高評価数）を機能させるために、以下の手順でOAuth2認証を通す必要があります。
+### 3. ナレッジベース (RAG) の活用方法
+`config/knowledge/` 配下に新しい Markdown ファイル（`.md`）を追加・更新することで、AI に踏まえさせたい運用知見をいつでも拡張できます。
 
-1. **Google Cloud Console** で以下を実施：
-   * `YouTube Analytics API` を有効化する。
-   * 「OAuth 同意画面」を設定（ユーザーの種類: 外部、テストユーザーに自身のYouTubeアカウントを追加）。
-     * 必要なスコープ: `https://www.googleapis.com/auth/yt-analytics.readonly` および `https://www.googleapis.com/auth/youtube.readonly`
-   * 「認証情報」から **OAuth 2.0 クライアント ID** (種類: デスクトップ アプリ) を作成。
-   * 作成したクライアントIDのJSONキーをダウンロードし、プロジェクトルートに `client_secret.json` として配置。
-2. **リフレッシュトークンの取得**:
-   * ローカル環境で以下のスクリプトを実行：
-     ```bash
-     python scripts/get_oauth_tokens.py
-     ```
-   * ブラウザが起動するので、上記で登録したテストユーザーアカウントでログイン・認証を承認します。
-   * コンソールに出力された `Refresh Token`, `Client ID`, `Client Secret` をコピーします。
-3. **環境変数の設定**:
-   * コピーした値を `.env` または GitHub Secrets にそれぞれ設定します。
-   * ※ 設定完了後、ローカルの `client_secret.json` は不要なため削除してください。
+**ファイル記述例 (`config/knowledge/my_strategy.md`)**:
+```markdown
+---
+title: 登録者100人未満のチャンネル成長戦略
+min_subscribers: 0
+max_subscribers: 100
+---
 
-
-## 手動実行手順
-定期実行（GitHub Actionsのcron）を待たずに、手動で日次モニター、週次レポート、月次レポートを実行する方法は以下の2通りあります。
-
-### 1. ローカル環境での手動実行
-事前に `.env` の設定と依存ライブラリのインストールを完了した上で、プロジェクトのルートディレクトリで以下のコマンドを実行します。
-
-* **日次KPIアラートの実行**
-  ```bash
-  python3 -m src.main_daily
-  ```
-
-* **週次AI戦略レポートの実行**
-  ```bash
-  python3 -m src.main_weekly
-  ```
-
-* **月次AI戦略レポートの実行**
-  ```bash
-  python3 -m src.main_monthly
-  ```
-
-### 2. GitHub Actions 上での手動実行
-GitHubリポジトリ上で手動実行（Workflow Dispatch）が可能です。
-
-1. GitHub リポジトリの **Actions** タブを開きます。
-2. 左側のメニューから実行したいワークフローを選択します：
-   * **Daily KPI Alert**（日次モニター）
-   * **Weekly Strategy Report**（週次レポート）
-   * **Monthly Strategy Report**（月次レポート）
-3. 画面右側に表示される **Run workflow** ドロップダウンをクリックし、**Run workflow** ボタンを押して実行します。
+（ここにアドバイスの前提とさせたい知識やYouTube運用ガイドラインを記載）
+```
+- `min_subscribers` / `max_subscribers`: 対象とする登録者数範囲を指定すると、チャンネルの成長段階に合わせて自動選択されます。
 
 
 ## ディレクトリ構成
@@ -112,7 +85,10 @@ yt-kpi-monitor/
 ├── .agents/
 │   └── AGENTS.md        # Antigravity用の開発ルール（自動認識されます）
 ├── .github/workflows/   # GitHub Actions (日次/週次/月次)
-├── config/query/        # BigQuery実行用SQL
+├── config/
+│   ├── knowledge/       # ナレッジベース用 Markdown ファイル (*.md)
+│   │   └── subscribers_under_100.md
+│   └── query/           # BigQuery実行用SQL
 ├── scripts/             # ローカル実行用補助スクリプト
 │   └── get_oauth_tokens.py
 ├── src/                 # Pythonソースコード
@@ -120,6 +96,7 @@ yt-kpi-monitor/
 │   ├── youtube_analytics_client.py
 │   ├── bigquery_client.py
 │   ├── gemini_client.py
+│   ├── knowledge_manager.py
 │   ├── slack_client.py
 │   ├── main_daily.py
 │   ├── main_weekly.py
@@ -127,6 +104,7 @@ yt-kpi-monitor/
 ├── requirements.txt
 └── README.md            # 本ドキュメント
 ```
+
 
 ## 開発計画・ロードマップ
 
@@ -140,17 +118,17 @@ yt-kpi-monitor/
 - [x] `bigquery_client.py`: 最新KPIの保存および前回データとの比較用クエリの実行処理
 - [x] `slack_client.py`: 登録者数やいいね数が増えた際のメッセージフォーマット整形とWebhook送信
 - [x] `slack_client.py`: 直近14日以内に公開された動画に対するCTR評価アラート機能の実装（閾値: 2.0% / 4.0%）およびデータ遅延時のハンドリング（#46）
-- [x] `main_daily.py`: 上記を統合した日次実行スクリプト
+- [x] `main_daily.py`: 直近14日動画の詳細KPIにおける前日比差分表示（#54）およびいいね減少通知（#53）
 - [x] `.github/workflows/daily_kpi_alert.yml`: GitHub Actionsの設定
 
-### フェーズ3: 週次/月次レポート ＆ Gemini連携の実装 (完了)
-- [x] `gemini_client.py`: Google AI Studio経由でGemini APIを呼び出す処理の実装
+### フェーズ3: 週次/月次レポート ＆ Gemini/RAG連携の実装 (完了)
+- [x] `gemini_client.py`: Google AI Studio経由でGemini APIを呼び出す処理の実装および過負荷時のフォールバック機能（#57）
+- [x] `knowledge_manager.py`: ファイルベースのナレッジエンジン (RAG) によるアドバイス精度向上機能の実装（#51）
 - [x] `main_weekly.py`: 週次集計データとAIアドバイスを統合してSlackへリッチテキストで投稿するスクリプト
-- [x] `.github/workflows/weekly_report.yml`: 定期レポート用のGitHub Actionsの設定
-- [x] YouTube Analytics APIから、より詳細な指標（視聴維持率、トラフィックソースなど）を取得する処理の追加
+- [x] `main_monthly.py`: 月次レポーティング、CVR算出、月前月比比較の実装（#43）
+- [x] `.github/workflows/weekly_report.yml` / `monthly_report.yml`: 定期レポート用のGitHub Actionsの設定
+- [x] BigQueryにおける `ARRAY_AGG` + `STRUCT` を用いた直近最新値および純増減数の算出クエリ改修（#58, #59）
 
-### 今後の拡張予定 (Next Steps) *この中で完了したタスクはREADME.mdから削除していく（ISSUEに履歴を残している為）
+### 今後の拡張予定 (Next Steps)
 - [ ] エラー発生時のSlack通知強化
 - [ ] Looker Studio によるデータ可視化
-- [ ] [改善]月次レポーティングのブラッシュアップ対応 #43
-  - 修正点を洗い出したら記載する。
