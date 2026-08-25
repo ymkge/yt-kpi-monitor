@@ -248,7 +248,10 @@ def main():
         
         if thread_ts and recent_videos_kpis:
             print("Sending recent video KPIs to the thread...")
-            slack.send_recent_video_kpis_to_thread(thread_ts, recent_videos_kpis)
+            try:
+                slack.send_recent_video_kpis_to_thread(thread_ts, recent_videos_kpis)
+            except Exception as thread_err:
+                print(f"::warning::Unexpected error while calling send_recent_video_kpis_to_thread: {thread_err}")
 
         print("Daily KPI Monitor completed successfully.")
 

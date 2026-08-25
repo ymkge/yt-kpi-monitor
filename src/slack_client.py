@@ -313,6 +313,52 @@ class SlackClient:
         })
         return attachments
 
+    def send_recent_video_kpis_to_thread(self, thread_ts: str, recent_videos_kpis: list) -> bool:
+        """
+        直近14日動画の詳細KPIアタッチメントを、親メッセージのスレッド(thread_ts)へ送信する。
+        """
+        if not recent_videos_kpis or not thread_ts or not self.bot_token or not self.channel:
+            return False
+
+        attachments = self._build_recent_video_attachments(recent_videos_kpis)
+        if not attachments:
+            return False
+
+        # Slack API制限: 1リクエストあたりの attachments 最大件数は10件
+        if len(attachments) > 10:
+            footer = attachments[-1]
+            video_atts = attachments[:-1][:9]
+            attachments = video_atts + [footer]
+
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.bot_token}",
+                "Content-Type": "application/json; charset=utf-8"
+            }
+            payload = {
+                "channel": self.channel,
+                "thread_ts": thread_ts,
+                "text": "🎬 直近14日間に公開された動画の詳細KPI",
+                "attachments": attachments,
+                "username": "クロBOT",
+                "icon_emoji": ":kuro:"
+            }
+            response = requests.post(
+                "https://slack.com/api/chat.postMessage",
+                headers=headers,
+                json=payload,
+                timeout=10
+            )
+            response.raise_for_status()
+            res_json = response.json()
+            if not res_json.get("ok"):
+                print(f"::warning::Slack thread API error: {res_json.get('error')}")
+                return False
+            return True
+        except Exception as e:
+            print(f"::warning::Failed to send recent video KPIs to thread: {e}")
+            return False
+
     def _format_signed_val(self, val, unit=""):
         if val is None:
             return f"0{unit}"
