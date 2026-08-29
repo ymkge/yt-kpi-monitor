@@ -7,7 +7,7 @@ GitHub ActionsとGoogle Cloudを活用することで、完全無料枠（Free T
 
 ## 主な機能
 *   **日次KPIアラート（Daily Monitor）**
-    *   毎日 19:00 (JST) に最新のチャンネル統計を取得。
+    *   毎日 20:00 (JST) に最新のチャンネル統計を取得（#61）。
     *   前回実行時からの差分（登録者数やいいね数の増加）を検知し、Slackへ通知。
     *   **直近14日動画の詳細KPI＆前日比表示**
         *   直近14日以内に公開された動画の各KPI（再生数、いいね数、登録者増、平均視聴時間、インプレッション数、CTR）において、前回計測時からの前日比増減（例: `+150 回`, `+1分15秒`, `+0.15%pt`）を分かりやすく表記（#54）。
@@ -18,7 +18,7 @@ GitHub ActionsとGoogle Cloudを活用することで、完全無料枠（Free T
         *   APIデータ遅延や公開直後のデータ不足時には `⚪️ 集計中 (データ反映待ち)` と表示し誤判定を防止。
     *   取得したデータを Google BigQuery へ永久蓄積（`ARRAY_AGG` + `STRUCT` による直近現在値および純増減数の高精度選出 #59）。
 *   **週次・月次AI戦略レポート（Weekly & Monthly Advisor）**
-    *   毎週月曜 0:00 (JST) および毎月1日 0:00 (JST) に集計を実行。
+    *   毎週月曜 20:00 (JST) および毎月1日 20:00 (JST) に集計・レポート生成を実行。
     *   **ナレッジベース連携によるAI分析精度の向上 (RAG Engine #51)**
         *   `config/knowledge/` ディレクトリに置かれた運用知識（Markdownファイル）を自動読み込み。
         *   現在のチャンネル登録者数フェーズ（例: 100人未満、1,000人未満など）にベストマッチするナレッジを自働抽出し、Gemini のプロンプトへ注入。
@@ -119,7 +119,8 @@ yt-kpi-monitor/
 - [x] `slack_client.py`: 登録者数やいいね数が増えた際のメッセージフォーマット整形とWebhook送信
 - [x] `slack_client.py`: 直近14日以内に公開された動画に対するCTR評価アラート機能の実装（閾値: 2.0% / 4.0%）およびデータ遅延時のハンドリング（#46）
 - [x] `main_daily.py`: 直近14日動画の詳細KPIにおける前日比差分表示（#54）およびいいね減少通知（#53）
-- [x] `.github/workflows/daily_kpi_alert.yml`: GitHub Actionsの設定
+- [x] `slack_client.py`: 直近14日動画KPIのスレッド投稿における `send_recent_video_kpis_to_thread` メソッド追加およびアタッチメント制限対応（#60）
+- [x] `.github/workflows/daily_kpi_alert.yml`: 自動実行スケジュールを JST 20:00 (UTC 11:00) へ統一・修正（#61）
 
 ### フェーズ3: 週次/月次レポート ＆ Gemini/RAG連携の実装 (完了)
 - [x] `gemini_client.py`: Google AI Studio経由でGemini APIを呼び出す処理の実装および過負荷時のフォールバック機能（#57）
