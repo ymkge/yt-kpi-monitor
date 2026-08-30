@@ -2,7 +2,7 @@ name: Daily KPI Alert
 
 on:
   schedule:
-    - cron: '0 11 * * *' # UTC 11:00 is JST 20:00
+    - cron: '13 11 * * *' # UTC 11:13 is JST 20:13
   workflow_dispatch:
 
 env:

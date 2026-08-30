@@ -2,7 +2,7 @@ name: Monthly Strategy Report
 
 on:
   schedule:
-    - cron: '0 11 1 * *' # UTC 11:00 on the 1st of every month is JST 20:00 on the 1st of every month
+    - cron: '13 11 1 * *' # UTC 11:13 on the 1st of every month is JST 20:13
   workflow_dispatch:
 
 env:
