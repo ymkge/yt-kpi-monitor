@@ -291,10 +291,40 @@ class SlackClient:
             raw_title = video.get("title", "")
             truncated_title = raw_title[:37] + "..." if len(raw_title) > 40 else raw_title
 
+            # 初速分析データの抽出
+            initial_info = metrics.get("initial_analysis", {})
+            age_days = initial_info.get("age_days")
+            like_rate = initial_info.get("like_rate")
+            pace_score = initial_info.get("pace_score")
+            avg_views = initial_info.get("avg_views")
+            ratio_pct = initial_info.get("ratio_pct")
+
+            age_text = f" (公開{age_days}日目)" if age_days is not None else ""
+
+            # 高評価率テキスト
+            like_rate_text = ""
+            if like_rate is not None:
+                if like_rate >= 10.0:
+                    eval_label = "🔥 熱量最高"
+                elif like_rate >= 5.0:
+                    eval_label = "🟢 高評価"
+                elif like_rate >= 2.0:
+                    eval_label = "🟡 標準"
+                else:
+                    eval_label = "⚪️ やや控えめ"
+                like_rate_text = f" [高評価率: {like_rate:.1f}% {eval_label}]"
+
+            # 初速ペース行
+            pace_line = ""
+            if pace_score and avg_views and ratio_pct is not None:
+                sign = "+" if ratio_pct >= 0 else ""
+                pace_line = f"🚀 *初速ペース*: {pace_score} _(過去{age_days}日目平均 {avg_views:,.1f}回 比 {sign}{ratio_pct:.1f}%)_\n"
+
             video_text = (
-                f"📅 *公開日時*: {pub_time} (UTC)\n"
+                f"📅 *公開日時*: {pub_time} (UTC){age_text}\n"
+                f"{pace_line}"
                 f"👁️ *再生数*: {views:,} 回{views_diff_str} ({red_views_text})\n"
-                f"👍 *いいね数*: {likes:,}{likes_diff_str}  /  👥 *登録者増*: {sub_gained_text}\n"
+                f"👍 *いいね数*: {likes:,}{likes_diff_str}{like_rate_text}  /  👥 *登録者増*: {sub_gained_text}\n"
                 f"⏱️ *平均視聴時間*: {duration_text}\n"
                 f"📢 *インプレッション数*: {impressions_text}\n"
                 f"🎯 *クリック率 (CTR)*: {ctr_text}"

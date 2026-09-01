@@ -303,4 +303,33 @@ class BigQueryClient:
             print(f"Warning: Failed to fetch previous video KPIs: {e}")
             return {}
 
+    def fetch_initial_performance_averages(self):
+        """
+        直近90日間に公開された動画の公開1日目、3日目、7日目における平均パフォーマンスを取得する。
+        """
+        sql_path = os.path.join("config", "query", "fetch_initial_performance_averages.sql")
+        with open(sql_path, "r") as f:
+            query_template = f.read()
+
+        query = query_template.replace("{{project_id}}", self.project_id).replace("{{dataset_id}}", self.dataset_id)
+
+        try:
+            query_job = self.client.query(query)
+            results = query_job.result()
+
+            averages = {}
+            for row in results:
+                row_dict = dict(row)
+                age_days = row_dict["age_days"]
+                averages[age_days] = {
+                    "avg_views": row_dict.get("avg_views", 0),
+                    "avg_likes": row_dict.get("avg_likes", 0),
+                    "sample_video_count": row_dict.get("sample_video_count", 0)
+                }
+            return averages
+        except Exception as e:
+            print(f"::warning::Failed to fetch initial performance averages: {e}")
+            return {}
+
+
 

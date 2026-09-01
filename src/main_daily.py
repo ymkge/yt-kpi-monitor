@@ -135,6 +135,9 @@ def main():
                     
                     print("Fetching impressions and CTR from Reporting API...")
                     impressions_data = yt_analytics.get_impressions_and_ctr(video_ids)
+
+                    # 過去動画の初速平均を取得（BigQuery）
+                    initial_averages = bq.fetch_initial_performance_averages()
                     
                     for v in recent_videos:
                         v_id = v["video_id"]
@@ -190,6 +193,50 @@ def main():
                             }
                         
                         v_metrics["diff"] = diffs
+
+                        # 初速パフォーマンス分析（スコア判定・高評価率計算）
+                        age_days = None
+                        if v.get("published_at"):
+                            try:
+                                pub_time_jst = datetime.fromisoformat(v["published_at"].replace("Z", "+00:00")).astimezone(JST)
+                                age_days = (now_jst.date() - pub_time_jst.date()).days
+                            except Exception:
+                                age_days = None
+
+                        curr_views = v_metrics["views"]
+                        curr_likes = v_metrics["likes"]
+
+                        like_rate = (curr_likes / curr_views * 100) if curr_views and curr_views > 0 else None
+
+                        pace_score = None
+                        avg_v = None
+                        ratio_pct = None
+
+                        if age_days in [1, 3, 7] and age_days in initial_averages:
+                            avg_info = initial_averages[age_days]
+                            avg_v = avg_info.get("avg_views", 0)
+                            sample_cnt = avg_info.get("sample_video_count", 0)
+                            if sample_cnt >= 3 and avg_v > 0:
+                                ratio = (curr_views / avg_v) - 1.0
+                                ratio_pct = ratio * 100
+                                if ratio >= 0.50:
+                                    pace_score = "★★★★★ (🚀 大好調!)"
+                                elif ratio >= 0.20:
+                                    pace_score = "★★★★☆ (👍 好調)"
+                                elif ratio >= -0.20:
+                                    pace_score = "★★★☆☆ (⚖️ 標準ペース)"
+                                elif ratio >= -0.40:
+                                    pace_score = "★★☆☆☆ (📉 やや低調)"
+                                else:
+                                    pace_score = "★☆☆☆☆ (⚠️ 伸び悩み)"
+
+                        v_metrics["initial_analysis"] = {
+                            "age_days": age_days,
+                            "like_rate": like_rate,
+                            "pace_score": pace_score,
+                            "avg_views": avg_v,
+                            "ratio_pct": ratio_pct
+                        }
 
                         recent_videos_kpis.append({
                             "video_id": v_id,
