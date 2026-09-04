@@ -8,6 +8,8 @@ class SlackClient:
     # CTR評価の閾値定数 (音楽BGMチャンネル向け調整)
     CTR_THRESHOLD_EXCELLENT = 4.0
     CTR_THRESHOLD_STANDARD = 2.0
+    # 統計量閾値定数 (環境変数で上書き可能、デフォルト200回)
+    CTR_MIN_SAMPLE_IMPRESSIONS = int(os.getenv("CTR_MIN_SAMPLE_IMPRESSIONS", "200"))
 
     def __init__(self, webhook_url=None, bot_token=None, channel=None):
         self.webhook_url = webhook_url or os.getenv("SLACK_WEBHOOK_URL")
@@ -30,12 +32,18 @@ class SlackClient:
         cleaned = re.sub(r'\*\*(.*?)\*\*', r'*\1*', cleaned)
         return cleaned.strip()
 
-    def _get_ctr_evaluation(self, ctr):
+    def _get_ctr_evaluation(self, ctr, impressions=None):
         """
         CTRの値から評価ラベルと絵文字を返す。
+        インプレッション数が閾値未満の場合は「参考値」として扱う。
         """
         if ctr is None:
             return ""
+        
+        # 統計量が不足している場合のガード判定 (impressions が指定されている場合のみ)
+        if impressions is not None and impressions < self.CTR_MIN_SAMPLE_IMPRESSIONS:
+            return " ⚪️ *参考値* (サンプル蓄積中・登録者中心)"
+
         if ctr >= self.CTR_THRESHOLD_EXCELLENT:
             return " 🟢 *優秀* (優秀なサムネイル)"
         elif ctr >= self.CTR_THRESHOLD_STANDARD:
@@ -281,7 +289,7 @@ class SlackClient:
             
             if impressions is not None and impressions > 0 and ctr is not None:
                 impressions_text = f"{impressions:,} 回{impr_diff_str}"
-                ctr_eval = self._get_ctr_evaluation(ctr)
+                ctr_eval = self._get_ctr_evaluation(ctr, impressions=impressions)
                 ctr_text = f"{ctr:.2f}%{ctr_diff_str}{ctr_eval}"
             else:
                 impressions_text = "集計中 またはデータなし"
