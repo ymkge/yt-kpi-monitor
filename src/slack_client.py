@@ -8,8 +8,11 @@ class SlackClient:
     # CTR評価の閾値定数 (音楽BGMチャンネル向け調整)
     CTR_THRESHOLD_EXCELLENT = 4.0
     CTR_THRESHOLD_STANDARD = 2.0
-    # 統計量閾値定数 (環境変数で上書き可能、デフォルト200回)
-    CTR_MIN_SAMPLE_IMPRESSIONS = int(os.getenv("CTR_MIN_SAMPLE_IMPRESSIONS", "200"))
+    # 統計量閾値定数 (環境変数で上書き可能、デフォルト1500回: CTR 2%で約30再生水準)
+    try:
+        CTR_MIN_SAMPLE_IMPRESSIONS = int(os.getenv("CTR_MIN_SAMPLE_IMPRESSIONS", "1500"))
+    except (ValueError, TypeError):
+        CTR_MIN_SAMPLE_IMPRESSIONS = 1500
 
     def __init__(self, webhook_url=None, bot_token=None, channel=None):
         self.webhook_url = webhook_url or os.getenv("SLACK_WEBHOOK_URL")
