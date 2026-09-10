@@ -28,10 +28,16 @@ def main():
             print(f"Error: Could not find channel with ID {channel_id}")
             sys.exit(1)
         
-        # 1.5. 全動画の簡易スタッツ取得と総いいね数の算出
+        # 1.5. 全動画の簡易スタッツ取得と総いいね数・総再生数の算出
         print("Fetching all videos stats...")
         all_videos_stats = yt.get_all_videos_stats(channel_id)
         current_kpi["total_like_count"] = sum(v["likes"] for v in all_videos_stats)
+
+        # 全動画の最新再生数合計を算出（channels.listのキャッシュ遅延回避 #67）
+        total_video_views = sum(v["views"] for v in all_videos_stats)
+        if total_video_views > current_kpi["view_count"]:
+            print(f"Updating view_count from channels.list ({current_kpi['view_count']:,}) to real-time videos sum ({total_video_views:,})")
+            current_kpi["view_count"] = total_video_views
 
         # 2. 前回のKPIを取得
         print("Fetching previous KPI from BigQuery...")
