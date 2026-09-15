@@ -482,7 +482,8 @@ class SlackClient:
             if top_ctr_videos:
                 ranking_text += "*🎯 クリック率 (CTR) ランキング (直近28日間)*\n"
                 for idx, video in enumerate(top_ctr_videos, 1):
-                    ranking_text += f"{idx}. {video['title']} (CTR: {video['ctr']:.2f}%, 再生数: {video['views']:,}回)\n"
+                    impr_val = video.get('impressions', 0)
+                    ranking_text += f"{idx}. {video['title']} (CTR: {video['ctr']:.2f}%, インプレッション: {impr_val:,}回, 再生数: {video['views']:,}回)\n"
 
             thread_attachments.append({
                 "title": "🎬 動画パフォーマンスランキング",
@@ -670,7 +671,8 @@ class SlackClient:
             if top_videos_rankings.get("ctr"):
                 ranking_text += "\n*🎯 クリック率 (CTR) Top 3*\n"
                 for idx, v in enumerate(top_videos_rankings["ctr"][:3], 1):
-                    ranking_text += f"{idx}. {v['title']} (CTR: {v['ctr']:.2f}%)\n"
+                    impr_val = v.get('impressions', 0)
+                    ranking_text += f"{idx}. {v['title']} (CTR: {v['ctr']:.2f}%, インプレッション: {impr_val:,}回)\n"
             if top_videos_rankings.get("duration"):
                 ranking_text += "\n*⏱️ 平均視聴時間 Top 3*\n"
                 for idx, v in enumerate(top_videos_rankings["duration"][:3], 1):

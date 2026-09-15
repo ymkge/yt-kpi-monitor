@@ -97,9 +97,14 @@ def main():
                             v["ctr"] = v_ctr.get("ctr", 0.0)
                             v["impressions"] = v_ctr.get("impressions", 0)
 
-                        # CTRでソートして上位3件を抽出
+                        # CTRでソートして上位3件を抽出（インプレッション1,500回以上の動画のみ対象 #68）
+                        try:
+                            min_impr = int(os.getenv("CTR_MIN_SAMPLE_IMPRESSIONS", "1500"))
+                        except (ValueError, TypeError):
+                            min_impr = 1500
+
                         top_ctr_videos = sorted(
-                            [v for v in ctr_candidate_videos if v.get("ctr", 0.0) > 0],
+                            [v for v in ctr_candidate_videos if v.get("ctr", 0.0) > 0 and v.get("impressions", 0) >= min_impr],
                             key=lambda x: x["ctr"],
                             reverse=True
                         )[:3]
@@ -148,7 +153,7 @@ def main():
             if top_ctr_videos:
                 kpi_summary_text += "## クリック率（CTR）上位動画\n"
                 for idx, v in enumerate(top_ctr_videos, 1):
-                    kpi_summary_text += f"{idx}. {v['title']} (CTR: {v['ctr']:.2f}%, 再生数: {v['views']:,}回)\n"
+                    kpi_summary_text += f"{idx}. {v['title']} (CTR: {v['ctr']:.2f}%, インプレッション: {v.get('impressions', 0):,}回, 再生数: {v['views']:,}回)\n"
 
         # 4. Geminiで戦略アドバイスを生成
         print("Generating strategy advice using Gemini API...")

@@ -188,9 +188,14 @@ def main():
                     for dv in detailed_videos:
                         dv["title"] = titles.get(dv["video_id"], "不明な動画")
 
-                    # CTRランキング
+                    # CTRランキング（インプレッション1,500回以上の動画のみ対象 #68）
+                    try:
+                        min_impr = int(os.getenv("CTR_MIN_SAMPLE_IMPRESSIONS", "1500"))
+                    except (ValueError, TypeError):
+                        min_impr = 1500
+
                     top_videos_rankings["ctr"] = sorted(
-                        [v for v in detailed_videos if v["ctr"] > 0],
+                        [v for v in detailed_videos if v.get("ctr", 0.0) > 0 and v.get("impressions", 0) >= min_impr],
                         key=lambda x: x["ctr"],
                         reverse=True
                     )[:3]
