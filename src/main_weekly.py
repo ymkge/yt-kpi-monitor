@@ -41,6 +41,11 @@ def main():
         top_likes_videos = None
         top_ctr_videos = []
 
+        try:
+            min_impr = int(os.getenv("CTR_MIN_SAMPLE_IMPRESSIONS", "1500"))
+        except (ValueError, TypeError):
+            min_impr = 1500
+
         oauth_client_id = os.getenv("YOUTUBE_OAUTH_CLIENT_ID")
         oauth_client_secret = os.getenv("YOUTUBE_OAUTH_CLIENT_SECRET")
         oauth_refresh_token = os.getenv("YOUTUBE_OAUTH_REFRESH_TOKEN")
@@ -98,11 +103,6 @@ def main():
                             v["impressions"] = v_ctr.get("impressions", 0)
 
                         # CTRでソートして上位3件を抽出（インプレッション1,500回以上の動画のみ対象 #68）
-                        try:
-                            min_impr = int(os.getenv("CTR_MIN_SAMPLE_IMPRESSIONS", "1500"))
-                        except (ValueError, TypeError):
-                            min_impr = 1500
-
                         top_ctr_videos = sorted(
                             [v for v in ctr_candidate_videos if v.get("ctr", 0.0) > 0 and v.get("impressions", 0) >= min_impr],
                             key=lambda x: x["ctr"],
@@ -138,17 +138,20 @@ def main():
         # ランキング情報がある場合はプロンプトに補足
         if top_views_videos or top_likes_videos or top_ctr_videos:
             kpi_summary_text += "\n# 動画パフォーマンスランキング（直近28日間）\n"
+            kpi_summary_text += f"※インプレッション{min_impr:,}回未満の動画は統計的標本数が不足しているため（登録者中心の視聴）、CTR分析の対象外（非表示）としています。\n"
             if top_views_videos:
                 kpi_summary_text += "## 再生数上位動画\n"
                 for idx, v in enumerate(top_views_videos, 1):
+                    impr_val = v.get("impressions", 0)
                     ctr_val = v.get("ctr", 0.0)
-                    ctr_text = f", CTR: {ctr_val:.2f}%" if ctr_val > 0 else ""
+                    ctr_text = f", CTR: {ctr_val:.2f}% (インプレッション: {impr_val:,}回)" if (impr_val >= min_impr and ctr_val > 0) else ""
                     kpi_summary_text += f"{idx}. {v['title']} (再生数: {v['views']:,}回, いいね数: {v['likes']:,}回{ctr_text})\n"
             if top_likes_videos:
                 kpi_summary_text += "## 高評価（いいね）数上位動画\n"
                 for idx, v in enumerate(top_likes_videos, 1):
+                    impr_val = v.get("impressions", 0)
                     ctr_val = v.get("ctr", 0.0)
-                    ctr_text = f", CTR: {ctr_val:.2f}%" if ctr_val > 0 else ""
+                    ctr_text = f", CTR: {ctr_val:.2f}% (インプレッション: {impr_val:,}回)" if (impr_val >= min_impr and ctr_val > 0) else ""
                     kpi_summary_text += f"{idx}. {v['title']} (いいね数: {v['likes']:,}回, 再生数: {v['views']:,}回{ctr_text})\n"
             if top_ctr_videos:
                 kpi_summary_text += "## クリック率（CTR）上位動画\n"
