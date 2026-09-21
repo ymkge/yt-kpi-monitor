@@ -54,10 +54,10 @@ class SlackClient:
         else:
             return " 🔴 *要改善* (ターゲット層に届いていない)"
 
-    def _build_like_diff_block(self, title_header, video_list, is_increase=True, max_display=5):
+    def _build_like_diff_block(self, title_header, video_list, is_increase=True, max_display=3):
         """
         いいねの増減があった動画リストからSlack Block Kitセクションを生成する。
-        表示上限(max_display)とタイトルのトリミングを行ってAPI制限超過を防止する。
+        表示上限(max_display=3)と1行インライン表示で折りたたみ(Show more)を防止する。
         """
         if not video_list:
             return None
@@ -69,15 +69,11 @@ class SlackClient:
         
         details = []
         for v in display_list:
-            tag = "🆕 [新規]" if v.get("is_new") else "🎬 [既存]"
-            pub_date = v["published_at"].split("T")[0] if "T" in v.get("published_at", "") else ""
-            
-            # タイトルが長い場合は40文字に切り捨て (Slack APIの文字数オーバー制限対策)
+            tag = "🆕" if v.get("is_new") else "🎬"
             raw_title = v.get("title", "")
-            truncated_title = raw_title[:37] + "..." if len(raw_title) > 40 else raw_title
-            
+            truncated_title = raw_title[:22] + "..." if len(raw_title) > 25 else raw_title
             diff_str = f"+{v['diff']:,}" if is_increase else f"{v['diff']:,}"
-            details.append(f"• {tag} *{truncated_title}* (公開: {pub_date})\n   ↳ 前日比 *{diff_str}* (現在: {v['current_likes']:,})")
+            details.append(f"• {tag} *{truncated_title}*: 前日比 *{diff_str}* (計{v['current_likes']:,})")
         
         if remaining_count > 0:
             action_label = "増加" if is_increase else "減少"
@@ -260,97 +256,96 @@ class SlackClient:
             metrics = video["metrics"]
             diffs = metrics.get("diff", {})
             
-            # 再生数
-            views = metrics.get("views", 0)
-            views_diff_str = self._format_diff_str(diffs.get("views"), unit=" 回")
-            red_views = metrics.get("red_views")
-            red_views_text = f"Premium: {red_views:,} 回" if red_views is not None else "Premium: 集計中"
+            # 公開日 (MM/DD) & 経過日数
+            pub_raw = video.get("published_at", "")
+            pub_date = pub_raw[5:10] if len(pub_raw) >= 10 else ""
+            
+            initial_info = metrics.get("initial_analysis", {})
+            age_days = initial_info.get("age_days")
+            age_text = f"({age_days}日目)" if age_days is not None else ""
+            
+            # 初速ペース (星+乖離率)
+            pace_score = initial_info.get("pace_score")
+            ratio_pct = initial_info.get("ratio_pct")
+            pace_part = ""
+            if pace_score and ratio_pct is not None:
+                stars = pace_score.count("★")
+                sign = "+" if ratio_pct >= 0 else ""
+                pace_part = f" | 🚀 ★{stars}({sign}{ratio_pct:.0f}%)"
 
-            # エンゲージビュー
+            line1 = f"📅 {pub_date} {age_text}{pace_part}".strip()
+
+            # 再生数 & Premium
+            views = metrics.get("views", 0)
+            views_diff_str = self._format_diff_str(diffs.get("views"), unit="")
+            red_views = metrics.get("red_views")
+            red_part = f" (Pre:{red_views:,})" if red_views is not None and red_views > 0 else ""
+            views_part = f"👁️ {views:,}{views_diff_str}{red_part}"
+
+            # エンゲージビュー & エンゲージ率
             engaged_views = metrics.get("engaged_views")
-            eng_diff_str = self._format_diff_str(diffs.get("engaged_views"), unit=" 回")
+            eng_diff_str = self._format_diff_str(diffs.get("engaged_views"), unit="")
             engage_rate = metrics.get("engage_rate")
             if engaged_views is not None:
-                rate_text = f" [エンゲージ率: {engage_rate:.1f}%]" if engage_rate is not None else ""
-                engaged_views_text = f"{engaged_views:,} 回{eng_diff_str}{rate_text}"
+                rate_text = f"({engage_rate:.0f}%)" if engage_rate is not None else ""
+                eng_part = f"✨ {engaged_views:,}{eng_diff_str}{rate_text}"
             else:
-                engaged_views_text = "集計中"
-            
-            # いいね数 / 登録者増
-            likes = metrics.get("likes", 0)
-            likes_diff_str = self._format_diff_str(diffs.get("likes"))
-            
-            sub_gained = metrics.get("subscribers_gained")
-            sub_diff_str = self._format_diff_str(diffs.get("subscribers_gained"))
-            sub_gained_text = f"+{sub_gained:,}{sub_diff_str}" if sub_gained is not None else "集計中"
-            
+                eng_part = "✨ -"
+
+            line2 = f"{views_part} | {eng_part}"
+
+            # インプレッション
+            impressions = metrics.get("impressions")
+            impr_diff_str = self._format_diff_str(diffs.get("impressions"), unit="")
+            if impressions is not None and impressions > 0:
+                impr_part = f"📢 {impressions:,}{impr_diff_str}"
+            else:
+                impr_part = "📢 -"
+
+            # CTR & 簡易アイコン
+            ctr = metrics.get("ctr")
+            ctr_diff_str = self._format_ctr_diff(diffs.get("ctr"))
+            if impressions is not None and impressions > 0 and ctr is not None:
+                if ctr >= self.CTR_THRESHOLD_EXCELLENT:
+                    eval_icon = "🟢"
+                elif ctr >= self.CTR_THRESHOLD_STANDARD:
+                    eval_icon = "🟡"
+                else:
+                    eval_icon = "🔴"
+                ctr_part = f"🎯 {ctr:.2f}%{ctr_diff_str} {eval_icon}"
+            else:
+                ctr_part = "🎯 -"
+
+            line3 = f"{impr_part} | {ctr_part}"
+
             # 平均視聴時間
             avg_sec = metrics.get("average_view_duration")
             dur_diff_str = self._format_duration_diff(diffs.get("average_view_duration"))
             if avg_sec is not None and avg_sec > 0:
                 m, s = divmod(avg_sec, 60)
-                duration_text = f"{m}分{s}秒{dur_diff_str}" if m > 0 else f"{s}秒{dur_diff_str}"
+                dur_str = f"{m}分{s}秒" if m > 0 and s > 0 else (f"{m}分" if m > 0 else f"{s}秒")
+                duration_part = f"⏱️ {dur_str}{dur_diff_str}"
             else:
-                duration_text = "集計中"
-                
-            # インプレッション / CTR
-            impressions = metrics.get("impressions")
-            impr_diff_str = self._format_diff_str(diffs.get("impressions"), unit=" 回")
-            
-            ctr = metrics.get("ctr")
-            ctr_diff_str = self._format_ctr_diff(diffs.get("ctr"))
-            
-            if impressions is not None and impressions > 0 and ctr is not None:
-                impressions_text = f"{impressions:,} 回{impr_diff_str}"
-                ctr_eval = self._get_ctr_evaluation(ctr, impressions=impressions)
-                ctr_text = f"{ctr:.2f}%{ctr_diff_str}{ctr_eval}"
-            else:
-                impressions_text = "集計中 またはデータなし"
-                ctr_text = "集計中 ⚪️ (データ反映待ち)"
-                
-            pub_time = video["published_at"].replace("T", " ").replace("Z", "")[:16]
+                duration_part = "⏱️ -"
+
+            # 登録者増
+            sub_gained = metrics.get("subscribers_gained")
+            sub_diff_str = self._format_diff_str(diffs.get("subscribers_gained"))
+            sub_part = f"👥 +{sub_gained}{sub_diff_str}" if sub_gained is not None else "👥 -"
+
+            # いいね数
+            likes = metrics.get("likes", 0)
+            likes_diff_str = self._format_diff_str(diffs.get("likes"))
+            likes_part = f"👍 {likes:,}{likes_diff_str}"
+
+            line4 = f"{duration_part} | {sub_part} | {likes_part}"
+
+            # 4行ウルトラスリム構成 (改行数: 3固定)
+            video_text = f"{line1}\n{line2}\n{line3}\n{line4}"
+
+            # タイトルを全角22文字前後にトリミングして複数行化を防止
             raw_title = video.get("title", "")
-            truncated_title = raw_title[:37] + "..." if len(raw_title) > 40 else raw_title
-
-            # 初速分析データの抽出
-            initial_info = metrics.get("initial_analysis", {})
-            age_days = initial_info.get("age_days")
-            like_rate = initial_info.get("like_rate")
-            pace_score = initial_info.get("pace_score")
-            avg_views = initial_info.get("avg_views")
-            ratio_pct = initial_info.get("ratio_pct")
-
-            age_text = f" (公開{age_days}日目)" if age_days is not None else ""
-
-            # 高評価率テキスト
-            like_rate_text = ""
-            if like_rate is not None:
-                if like_rate >= 10.0:
-                    eval_label = "🔥 熱量最高"
-                elif like_rate >= 5.0:
-                    eval_label = "🟢 高評価"
-                elif like_rate >= 2.0:
-                    eval_label = "🟡 標準"
-                else:
-                    eval_label = "⚪️ やや控えめ"
-                like_rate_text = f" [高評価率: {like_rate:.1f}% {eval_label}]"
-
-            # 初速ペース行
-            pace_line = ""
-            if pace_score and avg_views and ratio_pct is not None:
-                sign = "+" if ratio_pct >= 0 else ""
-                pace_line = f"🚀 *初速ペース*: {pace_score} _(過去{age_days}日目平均 {avg_views:,.1f}回 比 {sign}{ratio_pct:.1f}%)_\n"
-
-            video_text = (
-                f"📅 *公開日時*: {pub_time} (UTC){age_text}\n"
-                f"{pace_line}"
-                f"👁️ *再生数*: {views:,} 回{views_diff_str} ({red_views_text})\n"
-                f"✨ *エンゲージビュー*: {engaged_views_text}\n"
-                f"👍 *いいね数*: {likes:,}{likes_diff_str}{like_rate_text}  /  👥 *登録者増*: {sub_gained_text}\n"
-                f"⏱️ *平均視聴時間*: {duration_text}\n"
-                f"📢 *インプレッション数*: {impressions_text}\n"
-                f"🎯 *クリック率 (CTR)*: {ctr_text}"
-            )
+            truncated_title = raw_title[:22] + "..." if len(raw_title) > 25 else raw_title
 
             attachments.append({
                 "title": f"🎬 {idx}. {truncated_title}",
