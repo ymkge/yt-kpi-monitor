@@ -155,6 +155,7 @@ def main():
                         v_metrics["likes"] = v["realtime_likes"]
                         
                         v_metrics["red_views"] = v_metrics.get("red_views") if analytics_reflected else None
+                        v_metrics["engaged_views"] = v_metrics.get("engaged_views") if analytics_reflected else None
                         v_metrics["subscribers_gained"] = v_metrics.get("subscribers_gained") if analytics_reflected else None
                         v_metrics["average_view_duration"] = v_metrics.get("average_view_duration") if analytics_reflected else None
                         
@@ -177,6 +178,7 @@ def main():
 
                         if prev_v:
                             diffs["views"] = calc_diff(v_metrics["views"], prev_v.get("views"))
+                            diffs["engaged_views"] = calc_diff(v_metrics["engaged_views"], prev_v.get("engaged_views"))
                             diffs["likes"] = calc_diff(v_metrics["likes"], prev_v.get("likes"))
                             diffs["subscribers_gained"] = calc_diff(v_metrics["subscribers_gained"], prev_v.get("subscribers_gained"))
                             diffs["average_view_duration"] = calc_diff(v_metrics["average_view_duration"], prev_v.get("average_view_duration"))
@@ -191,6 +193,7 @@ def main():
                         else:
                             diffs = {
                                 "views": None,
+                                "engaged_views": None,
                                 "likes": None,
                                 "subscribers_gained": None,
                                 "average_view_duration": None,
@@ -199,6 +202,14 @@ def main():
                             }
                         
                         v_metrics["diff"] = diffs
+
+                        # エンゲージ率の算出（ゼロ除算・100%超過ガード）
+                        curr_v_count = v_metrics["views"]
+                        curr_eng_v = v_metrics.get("engaged_views")
+                        if curr_v_count and curr_v_count > 0 and curr_eng_v is not None:
+                            v_metrics["engage_rate"] = min(100.0, (curr_eng_v / curr_v_count) * 100.0)
+                        else:
+                            v_metrics["engage_rate"] = None
 
                         # 初速パフォーマンス分析（スコア判定・高評価率計算）
                         age_days = None
@@ -272,6 +283,7 @@ def main():
                     "published_at": v["published_at"],
                     "metrics": {
                         "views": v["views"],
+                        "engaged_views": None,
                         "likes": v["likes"],
                         "subscribers_gained": None,
                         "average_view_duration": None,

@@ -2,6 +2,7 @@ SELECT
     video_id,
     title,
     views,
+    engaged_views,
     likes,
     subscribers_gained,
     average_view_duration,

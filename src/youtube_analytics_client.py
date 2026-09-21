@@ -117,39 +117,69 @@ class YouTubeAnalyticsClient:
         # フィルターに指定する動画IDをカンマ区切りにする
         video_filter = ",".join(video_ids)
 
-        request = self.analytics.reports().query(
-            ids="channel==MINE",
-            startDate=start_date_str,
-            endDate=end_date_str,
-            metrics="views,redViews,subscribersGained,averageViewDuration,likes",
-            dimensions="video",
-            filters=f"video=={video_filter}"
-        )
-        response = request.execute()
+        metrics_str = "views,redViews,engagedViews,subscribersGained,averageViewDuration,likes"
+        try:
+            request = self.analytics.reports().query(
+                ids="channel==MINE",
+                startDate=start_date_str,
+                endDate=end_date_str,
+                metrics=metrics_str,
+                dimensions="video",
+                filters=f"video=={video_filter}"
+            )
+            response = request.execute()
+        except Exception as e:
+            print(f"::warning::Failed to query video metrics with engagedViews: {e}. Retrying without engagedViews...")
+            try:
+                fallback_metrics = "views,redViews,subscribersGained,averageViewDuration,likes"
+                request = self.analytics.reports().query(
+                    ids="channel==MINE",
+                    startDate=start_date_str,
+                    endDate=end_date_str,
+                    metrics=fallback_metrics,
+                    dimensions="video",
+                    filters=f"video=={video_filter}"
+                )
+                response = request.execute()
+            except Exception as retry_err:
+                print(f"::warning::Failed to fetch video metrics: {retry_err}")
+                return {}
 
+        column_headers = response.get("columnHeaders", [])
+        col_map = {h.get("name"): idx for idx, h in enumerate(column_headers) if h.get("name")}
         rows = response.get("rows", [])
         metrics_by_video = {}
         
-        # 初期値で埋める
+        # 初期値で埋める（API未反映時は None を許容）
         for vid in video_ids:
             metrics_by_video[vid] = {
                 "views": 0,
-                "red_views": 0,
-                "subscribers_gained": 0,
-                "average_view_duration": 0,
+                "red_views": None,
+                "engaged_views": None,
+                "subscribers_gained": None,
+                "average_view_duration": None,
                 "likes": 0
             }
 
-        if rows:
+        if rows and "video" in col_map:
+            video_idx = col_map["video"]
             for row in rows:
-                vid = row[0]
+                vid = row[video_idx]
                 if vid in metrics_by_video:
+                    def _get_val(col_name, default=0, is_optional=False):
+                        if col_name in col_map:
+                            idx = col_map[col_name]
+                            if idx < len(row) and row[idx] is not None:
+                                return int(row[idx])
+                        return None if is_optional else default
+
                     metrics_by_video[vid] = {
-                        "views": int(row[1]) if row[1] is not None else 0,
-                        "red_views": int(row[2]) if row[2] is not None else 0,
-                        "subscribers_gained": int(row[3]) if row[3] is not None else 0,
-                        "average_view_duration": int(row[4]) if row[4] is not None else 0,
-                        "likes": int(row[5]) if row[5] is not None else 0
+                        "views": _get_val("views", default=0),
+                        "red_views": _get_val("redViews", is_optional=True),
+                        "engaged_views": _get_val("engagedViews", is_optional=True),
+                        "subscribers_gained": _get_val("subscribersGained", default=0),
+                        "average_view_duration": _get_val("averageViewDuration", default=0),
+                        "likes": _get_val("likes", default=0)
                     }
 
         return metrics_by_video

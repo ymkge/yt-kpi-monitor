@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS `{{project_id}}.{{dataset_id}}.video_kpis` (
     title STRING,
     published_at TIMESTAMP,
     views INT64,
+    engaged_views INT64,
     likes INT64,
     subscribers_gained INT64,
     average_view_duration INT64,
