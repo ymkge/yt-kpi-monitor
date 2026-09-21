@@ -265,6 +265,16 @@ class SlackClient:
             views_diff_str = self._format_diff_str(diffs.get("views"), unit=" 回")
             red_views = metrics.get("red_views")
             red_views_text = f"Premium: {red_views:,} 回" if red_views is not None else "Premium: 集計中"
+
+            # エンゲージビュー
+            engaged_views = metrics.get("engaged_views")
+            eng_diff_str = self._format_diff_str(diffs.get("engaged_views"), unit=" 回")
+            engage_rate = metrics.get("engage_rate")
+            if engaged_views is not None:
+                rate_text = f" [エンゲージ率: {engage_rate:.1f}%]" if engage_rate is not None else ""
+                engaged_views_text = f"{engaged_views:,} 回{eng_diff_str}{rate_text}"
+            else:
+                engaged_views_text = "集計中"
             
             # いいね数 / 登録者増
             likes = metrics.get("likes", 0)
@@ -335,6 +345,7 @@ class SlackClient:
                 f"📅 *公開日時*: {pub_time} (UTC){age_text}\n"
                 f"{pace_line}"
                 f"👁️ *再生数*: {views:,} 回{views_diff_str} ({red_views_text})\n"
+                f"✨ *エンゲージビュー*: {engaged_views_text}\n"
                 f"👍 *いいね数*: {likes:,}{likes_diff_str}{like_rate_text}  /  👥 *登録者増*: {sub_gained_text}\n"
                 f"⏱️ *平均視聴時間*: {duration_text}\n"
                 f"📢 *インプレッション数*: {impressions_text}\n"

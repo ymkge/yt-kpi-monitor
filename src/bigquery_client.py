@@ -120,6 +120,7 @@ class BigQueryClient:
                     "title": v_kpi["title"],
                     "published_at": pub_time_str,
                     "views": metrics.get("views"),
+                    "engaged_views": metrics.get("engaged_views"),
                     "likes": metrics.get("likes"),
                     "subscribers_gained": metrics.get("subscribers_gained"),
                     "average_view_duration": metrics.get("average_view_duration"),
@@ -132,12 +133,14 @@ class BigQueryClient:
                 print(f"Inserting {len(rows)} new video records for date: {today_str}")
                 load_job_config = bigquery.LoadJobConfig(
                     source_format=bigquery.SourceFormat.NEWLINE_DELIMITED_JSON,
+                    schema_update_options=[bigquery.SchemaUpdateOption.ALLOW_FIELD_ADDITION],
                     schema=[
                         bigquery.SchemaField("dt", "DATE", mode="REQUIRED"),
                         bigquery.SchemaField("video_id", "STRING", mode="REQUIRED"),
                         bigquery.SchemaField("title", "STRING"),
                         bigquery.SchemaField("published_at", "TIMESTAMP"),
                         bigquery.SchemaField("views", "INT64"),
+                        bigquery.SchemaField("engaged_views", "INT64"),
                         bigquery.SchemaField("likes", "INT64"),
                         bigquery.SchemaField("subscribers_gained", "INT64"),
                         bigquery.SchemaField("average_view_duration", "INT64"),
@@ -292,6 +295,7 @@ class BigQueryClient:
                 previous_video_kpis[row_dict["video_id"]] = {
                     "title": row_dict.get("title"),
                     "views": row_dict.get("views"),
+                    "engaged_views": row_dict.get("engaged_views"),
                     "likes": row_dict.get("likes"),
                     "subscribers_gained": row_dict.get("subscribers_gained"),
                     "average_view_duration": row_dict.get("average_view_duration"),
