@@ -223,13 +223,13 @@ class SlackClient:
         if diff_val is None:
             return ""
         sign = "+" if diff_val >= 0 else ""
-        return f" ({sign}{diff_val:,}{unit})"
+        return f"({sign}{diff_val:,}{unit})"
 
     def _format_duration_diff(self, diff_sec):
         if diff_sec is None:
             return ""
         if diff_sec == 0:
-            return " (±0秒)"
+            return "(±0秒)"
         sign = "+" if diff_sec > 0 else "-"
         abs_sec = abs(diff_sec)
         m, s = divmod(abs_sec, 60)
@@ -239,13 +239,13 @@ class SlackClient:
             time_str = f"{m}分"
         else:
             time_str = f"{s}秒"
-        return f" ({sign}{time_str})"
+        return f"({sign}{time_str})"
 
     def _format_ctr_diff(self, diff_ctr):
         if diff_ctr is None:
             return ""
         sign = "+" if diff_ctr >= 0 else ""
-        return f" ({sign}{diff_ctr:.2f}%pt)"
+        return f"({sign}{diff_ctr:.2f}%)"
 
     def _build_recent_video_attachments(self, recent_videos_kpis):
         if not recent_videos_kpis:
@@ -256,9 +256,9 @@ class SlackClient:
             metrics = video["metrics"]
             diffs = metrics.get("diff", {})
             
-            # 公開日 (MM/DD) & 経過日数
+            # 公開日 (YYYY-MM-DD) & 経過日数
             pub_raw = video.get("published_at", "")
-            pub_date = pub_raw[5:10] if len(pub_raw) >= 10 else ""
+            pub_date = pub_raw[:10] if len(pub_raw) >= 10 else ""
             
             initial_info = metrics.get("initial_analysis", {})
             age_days = initial_info.get("age_days")
@@ -288,9 +288,9 @@ class SlackClient:
             engage_rate = metrics.get("engage_rate")
             if engaged_views is not None:
                 rate_text = f"({engage_rate:.0f}%)" if engage_rate is not None else ""
-                eng_part = f"✨ {engaged_views:,}{eng_diff_str}{rate_text}"
+                eng_part = f"✨ EnView: {engaged_views:,}{eng_diff_str}{rate_text}"
             else:
-                eng_part = "✨ -"
+                eng_part = "✨ EnView: -"
 
             line2 = f"{views_part} | {eng_part}"
 
@@ -298,9 +298,9 @@ class SlackClient:
             impressions = metrics.get("impressions")
             impr_diff_str = self._format_diff_str(diffs.get("impressions"), unit="")
             if impressions is not None and impressions > 0:
-                impr_part = f"📢 {impressions:,}{impr_diff_str}"
+                impr_part = f"📢 IMP: {impressions:,}{impr_diff_str}"
             else:
-                impr_part = "📢 -"
+                impr_part = "📢 IMP: -"
 
             # CTR & 簡易アイコン
             ctr = metrics.get("ctr")
@@ -312,9 +312,9 @@ class SlackClient:
                     eval_icon = "🟡"
                 else:
                     eval_icon = "🔴"
-                ctr_part = f"🎯 {ctr:.2f}%{ctr_diff_str} {eval_icon}"
+                ctr_part = f"🎯 CTR: {ctr:.2f}%{ctr_diff_str} {eval_icon}"
             else:
-                ctr_part = "🎯 -"
+                ctr_part = "🎯 CTR: -"
 
             line3 = f"{impr_part} | {ctr_part}"
 
@@ -324,18 +324,20 @@ class SlackClient:
             if avg_sec is not None and avg_sec > 0:
                 m, s = divmod(avg_sec, 60)
                 dur_str = f"{m}分{s}秒" if m > 0 and s > 0 else (f"{m}分" if m > 0 else f"{s}秒")
-                duration_part = f"⏱️ {dur_str}{dur_diff_str}"
+                duration_part = f"⏱️ AVD: {dur_str}{dur_diff_str}"
             else:
-                duration_part = "⏱️ -"
+                duration_part = "⏱️ AVD: -"
 
-            # 登録者増
+            # 登録者増 (差分0は冗長な(+0)を省略)
             sub_gained = metrics.get("subscribers_gained")
-            sub_diff_str = self._format_diff_str(diffs.get("subscribers_gained"))
+            sub_diff_val = diffs.get("subscribers_gained")
+            sub_diff_str = self._format_diff_str(sub_diff_val) if sub_diff_val != 0 else ""
             sub_part = f"👥 +{sub_gained}{sub_diff_str}" if sub_gained is not None else "👥 -"
 
-            # いいね数
+            # いいね数 (差分0は冗長な(+0)を省略)
             likes = metrics.get("likes", 0)
-            likes_diff_str = self._format_diff_str(diffs.get("likes"))
+            likes_diff_val = diffs.get("likes")
+            likes_diff_str = self._format_diff_str(likes_diff_val) if likes_diff_val != 0 else ""
             likes_part = f"👍 {likes:,}{likes_diff_str}"
 
             line4 = f"{duration_part} | {sub_part} | {likes_part}"
