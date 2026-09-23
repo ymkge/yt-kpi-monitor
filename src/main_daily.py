@@ -298,7 +298,51 @@ def main():
                 bq.save_video_kpis(all_videos_to_save)
             except Exception as bq_video_err:
                 print(f"::warning::Failed to save video KPIs to BigQuery: {bq_video_err}")
-                print("Proceeding to Slack notification.")
+        # 4.6. 登録者数の増減があった動画の抽出と分類
+        increased_subscriber_videos = []
+        decreased_subscriber_videos = []
+
+        if recent_videos_kpis:
+            for v in recent_videos_kpis:
+                v_id = v["video_id"]
+                metrics = v.get("metrics", {})
+                diffs = metrics.get("diff", {})
+                
+                diff_sub = diffs.get("subscribers_gained")
+                curr_sub = metrics.get("subscribers_gained")
+                
+                # 新規動画判定（公開から3日以内）
+                initial_info = metrics.get("initial_analysis", {})
+                age_days = initial_info.get("age_days")
+                is_new = (age_days is not None and age_days <= 3)
+
+                # 過去データがない新規動画（公開3日以内）で初回に登録者を獲得した場合のフォールバック
+                if diff_sub is None and is_new and curr_sub is not None and curr_sub > 0:
+                    diff_sub = curr_sub
+
+                if diff_sub is not None:
+                    if diff_sub > 0:
+                        increased_subscriber_videos.append({
+                            "video_id": v_id,
+                            "title": v["title"],
+                            "diff": diff_sub,
+                            "current_subscribers": curr_sub,
+                            "is_new": is_new,
+                            "published_at": v.get("published_at")
+                        })
+                    elif diff_sub < 0:
+                        decreased_subscriber_videos.append({
+                            "video_id": v_id,
+                            "title": v["title"],
+                            "diff": diff_sub,
+                            "current_subscribers": curr_sub,
+                            "is_new": is_new,
+                            "published_at": v.get("published_at")
+                        })
+
+            # ソート（増加は大きい順、減少はマイナスが大きい順）
+            increased_subscriber_videos.sort(key=lambda x: x["diff"], reverse=True)
+            decreased_subscriber_videos.sort(key=lambda x: x["diff"])
 
         # 5. Slack通知
         print("Sending Slack alert...")
@@ -307,7 +351,9 @@ def main():
             previous_kpi,
             recent_videos_kpis if recent_videos_kpis else None,
             increased_like_videos if increased_like_videos else None,
-            decreased_like_videos if decreased_like_videos else None
+            decreased_like_videos if decreased_like_videos else None,
+            increased_subscriber_videos if increased_subscriber_videos else None,
+            decreased_subscriber_videos if decreased_subscriber_videos else None
         )
 
         

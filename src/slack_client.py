@@ -54,9 +54,10 @@ class SlackClient:
         else:
             return " 🔴 *要改善* (ターゲット層に届いていない)"
 
-    def _build_like_diff_block(self, title_header, video_list, is_increase=True, max_display=3):
+    def _build_video_diff_block(self, title_header, video_list, is_increase=True, max_display=3,
+                                metric_name="いいね", total_prefix="計", total_field="current_likes", total_plus_sign=False):
         """
-        いいねの増減があった動画リストからSlack Block Kitセクションを生成する。
+        動画の増減リストからSlack Block Kitセクションを生成する汎用メソッド。
         表示上限(max_display=3)と1行インライン表示で折りたたみ(Show more)を防止する。
         """
         if not video_list:
@@ -73,11 +74,19 @@ class SlackClient:
             raw_title = v.get("title", "")
             truncated_title = raw_title[:22] + "..." if len(raw_title) > 25 else raw_title
             diff_str = f"+{v['diff']:,}" if is_increase else f"{v['diff']:,}"
-            details.append(f"• {tag} *{truncated_title}*: 前日比 *{diff_str}* (計{v['current_likes']:,})")
+            
+            total_val = v.get(total_field)
+            if total_val is not None:
+                plus = "+" if total_plus_sign and total_val > 0 else ""
+                total_str = f" ({total_prefix}{plus}{total_val:,})"
+            else:
+                total_str = ""
+                
+            details.append(f"• {tag} *{truncated_title}*: 前日比 *{diff_str}*{total_str}")
         
         if remaining_count > 0:
             action_label = "増加" if is_increase else "減少"
-            details.append(f"_...他 {remaining_count} 件の動画でいいねが{action_label}_")
+            details.append(f"_...他 {remaining_count} 件の動画で{metric_name}が{action_label}_")
         
         return {
             "type": "section",
@@ -87,7 +96,35 @@ class SlackClient:
             }
         }
 
-    def send_kpi_alert(self, current_kpi, previous_kpi=None, recent_videos_kpis=None, increased_like_videos=None, decreased_like_videos=None):
+    def _build_like_diff_block(self, title_header, video_list, is_increase=True, max_display=3):
+        """いいねの増減があった動画リストからSlack Block Kitセクションを生成する。"""
+        return self._build_video_diff_block(
+            title_header=title_header,
+            video_list=video_list,
+            is_increase=is_increase,
+            max_display=max_display,
+            metric_name="いいね",
+            total_prefix="計",
+            total_field="current_likes",
+            total_plus_sign=False
+        )
+
+    def _build_subscriber_diff_block(self, title_header, video_list, is_increase=True, max_display=3):
+        """登録者の増減があった動画リストからSlack Block Kitセクションを生成する。"""
+        return self._build_video_diff_block(
+            title_header=title_header,
+            video_list=video_list,
+            is_increase=is_increase,
+            max_display=max_display,
+            metric_name="登録者",
+            total_prefix="累計",
+            total_field="current_subscribers",
+            total_plus_sign=True
+        )
+
+    def send_kpi_alert(self, current_kpi, previous_kpi=None, recent_videos_kpis=None,
+                       increased_like_videos=None, decreased_like_videos=None,
+                       increased_subscriber_videos=None, decreased_subscriber_videos=None):
         """
         KPIの増分を含めたSlackアラートを送信する。
         Bot Tokenが利用可能な場合は、親メッセージ(Block Kit)を送信し、スレID(ts)を返す。
@@ -151,6 +188,18 @@ class SlackClient:
             }
         ]
 
+        # 登録者増減ブロック（サマリの並び順に合わせて「登録者」→「いいね」の順）
+        sub_inc_block = self._build_subscriber_diff_block("👥 登録者が増加した動画", increased_subscriber_videos, is_increase=True)
+        if sub_inc_block:
+            blocks.append(sub_inc_block)
+            blocks.append({"type": "divider"})
+
+        sub_dec_block = self._build_subscriber_diff_block("👤 登録者が減少（補正）した動画", decreased_subscriber_videos, is_increase=False)
+        if sub_dec_block:
+            blocks.append(sub_dec_block)
+            blocks.append({"type": "divider"})
+
+        # いいね数増減ブロック
         inc_block = self._build_like_diff_block("👍 いいね数が増加した動画", increased_like_videos, is_increase=True)
         if inc_block:
             blocks.append(inc_block)
@@ -166,15 +215,21 @@ class SlackClient:
 
         if use_bot:
             try:
-                # Bot Tokenを利用して親メッセージを送信
+                context_elements = [
+                    {
+                        "type": "mrkdwn",
+                        "text": "💬 *直近14日以内に公開された動画の詳細KPIは、このメッセージのスレッドに投稿されています。*"
+                    }
+                ]
+                if sub_inc_block or sub_dec_block:
+                    context_elements.append({
+                        "type": "mrkdwn",
+                        "text": "※動画別登録者数は動画再生ページ経由の直接登録を集計（ホーム画面等からの登録は全体サマリに反映）。"
+                    })
+
                 blocks.append({
                     "type": "context",
-                    "elements": [
-                        {
-                            "type": "mrkdwn",
-                            "text": "💬 *直近14日以内に公開された動画の詳細KPIは、このメッセージのスレッドに投稿されています。*"
-                        }
-                    ]
+                    "elements": context_elements
                 })
 
                 headers = {
