@@ -274,6 +274,38 @@ class SlackClient:
             response.raise_for_status()
             return None
 
+    def _format_compact_title(self, title: str, max_chars: int = 22) -> str:
+        """
+        タイトル内の改行文字を除去し、安全にトリミング（超過時は...を付与）する。
+        """
+        if not title:
+            return ""
+        clean_title = title.replace("\r\n", " ").replace("\n", " ").replace("\r", " ").strip()
+        if len(clean_title) > max_chars + 3:
+            return clean_title[:max_chars] + "..."
+        return clean_title
+
+    def _format_duration(self, seconds) -> str:
+        """
+        秒数を「⏱️ AVD: X分Y秒」形式に変換する。Noneや0以下の場合は「⏱️ AVD: -」を返す。
+        """
+        if seconds is None:
+            return "⏱️ AVD: -"
+        try:
+            sec_val = int(round(float(seconds)))
+            if sec_val <= 0:
+                return "⏱️ AVD: -"
+            m, s = divmod(sec_val, 60)
+            if m > 0 and s > 0:
+                time_str = f"{m}分{s}秒"
+            elif m > 0:
+                time_str = f"{m}分"
+            else:
+                time_str = f"{s}秒"
+            return f"⏱️ AVD: {time_str}"
+        except (ValueError, TypeError):
+            return "⏱️ AVD: -"
+
     def _format_diff_str(self, diff_val, unit=""):
         if diff_val is None:
             return ""
@@ -492,7 +524,7 @@ class SlackClient:
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f"*チャンネル*: `{channel_title}`\n*集計期間*: {start_date} 〜 {end_date} (JST)"
+                    "text": f"*チャンネル*: `{channel_title}`\n📅 *集計期間*: {start_date} 〜 {end_date} (JST)"
                 }
             },
             {
@@ -523,42 +555,58 @@ class SlackClient:
         # 2. スレッド用の詳細アタッチメントの構築
         thread_attachments = []
 
-        # 動画ランキングの追加
-        if top_views_videos or top_likes_videos or top_ctr_videos:
-            ranking_text = ""
-            if top_views_videos:
-                ranking_text += "*🔥 再生数ランキング (直近28日間)*\n"
-                for idx, video in enumerate(top_views_videos, 1):
-                    ctr_val = video.get('ctr', 0.0)
-                    ctr_text = f", CTR: {ctr_val:.2f}%" if ctr_val > 0 else ""
-                    ranking_text += f"{idx}. {video['title']} (再生数: {video['views']:,}回, いいね数: {video['likes']:,}回{ctr_text})\n"
-                ranking_text += "\n"
-
-            if top_likes_videos:
-                ranking_text += "*👍 高評価（いいね）数ランキング (直近28日間)*\n"
-                for idx, video in enumerate(top_likes_videos, 1):
-                    ctr_val = video.get('ctr', 0.0)
-                    ctr_text = f", CTR: {ctr_val:.2f}%" if ctr_val > 0 else ""
-                    ranking_text += f"{idx}. {video['title']} (いいね数: {video['likes']:,}回, 再生数: {video['views']:,}回{ctr_text})\n"
-                ranking_text += "\n"
-
-            if top_ctr_videos:
-                ranking_text += "*🎯 クリック率 (CTR) ランキング (直近28日間)*\n"
-                for idx, video in enumerate(top_ctr_videos, 1):
-                    impr_val = video.get('impressions', 0)
-                    ranking_text += f"{idx}. {video['title']} (CTR: {video['ctr']:.2f}%, インプレッション: {impr_val:,}回, 再生数: {video['views']:,}回)\n"
-
+        # 動画ランキングの追加（折りたたみ防止のため種別ごとにアタッチメント分割）
+        if top_views_videos:
+            lines = []
+            for video in top_views_videos[:3]:
+                title = self._format_compact_title(video.get("title", ""))
+                views_val = video.get("views", 0)
+                likes_val = video.get("likes", 0)
+                ctr_val = video.get("ctr", 0.0)
+                ctr_part = f" | 🎯 CTR: {ctr_val:.2f}%" if ctr_val > 0 else ""
+                lines.append(f"• 🎬 *{title}*: 👁️ {views_val:,} | 👍 {likes_val:,}{ctr_part}")
             thread_attachments.append({
-                "title": "🎬 動画パフォーマンスランキング",
-                "color": "#ff9900",
-                "text": ranking_text.strip(),
+                "title": "🔥 再生数 Top 3 (直近28日間)",
+                "color": "#ff4757",
+                "text": "\n".join(lines),
+                "mrkdwn_in": ["text"]
+            })
+
+        if top_likes_videos:
+            lines = []
+            for video in top_likes_videos[:3]:
+                title = self._format_compact_title(video.get("title", ""))
+                likes_val = video.get("likes", 0)
+                views_val = video.get("views", 0)
+                ctr_val = video.get("ctr", 0.0)
+                ctr_part = f" | 🎯 CTR: {ctr_val:.2f}%" if ctr_val > 0 else ""
+                lines.append(f"• 🎬 *{title}*: 👍 {likes_val:,} | 👁️ {views_val:,}{ctr_part}")
+            thread_attachments.append({
+                "title": "👍 いいね数 Top 3 (直近28日間)",
+                "color": "#2ed573",
+                "text": "\n".join(lines),
+                "mrkdwn_in": ["text"]
+            })
+
+        if top_ctr_videos:
+            lines = []
+            for video in top_ctr_videos[:3]:
+                title = self._format_compact_title(video.get("title", ""))
+                ctr_val = video.get("ctr", 0.0)
+                impr_val = video.get("impressions", 0)
+                views_val = video.get("views", 0)
+                lines.append(f"• 🎬 *{title}*: 🎯 CTR: {ctr_val:.2f}% | 📢 IMP: {impr_val:,} | 👁️ {views_val:,}")
+            thread_attachments.append({
+                "title": "🎯 CTR Top 3 (直近28日間)",
+                "color": "#1e90ff",
+                "text": "\n".join(lines),
                 "mrkdwn_in": ["text"]
             })
 
         # Geminiアドバイスの追加
         cleaned_advice = self._clean_slack_mrkdwn(advice_text)
         thread_attachments.append({
-            "title": ":kuro: の打改善アドバイス",
+            "title": ":kuro: の改善アドバイス",
             "color": "#4385f4",
             "text": cleaned_advice,
             "mrkdwn_in": ["text"]
@@ -574,7 +622,7 @@ class SlackClient:
                     "elements": [
                         {
                             "type": "mrkdwn",
-                            "text": "💬 *動画パフォーマンスランキングおよび :kuro: の打改善アドバイスは、このメッセージのスレッドに投稿されています。*"
+                            "text": "💬 *動画パフォーマンスランキングおよび :kuro: の改善アドバイスは、このメッセージのスレッドに投稿されています。*"
                         }
                     ]
                 })
@@ -685,7 +733,7 @@ class SlackClient:
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": f"*チャンネル*: `{channel_title}`\n*対象月*: {start_date} 〜 {end_date} (JST)"
+                    "text": f"*チャンネル*: `{channel_title}`\n📅 *集計期間*: {start_date} 〜 {end_date} (JST)"
                 }
             },
             {
@@ -712,7 +760,7 @@ class SlackClient:
                     },
                     {
                         "type": "mrkdwn",
-                        "text": f"*🎯 登録転換率 (CVR)*\n{cvr:.2f}%{' (※純減)' if sub_growth < 0 else ''}\n_(登録増 / 再生数増)_"
+                        "text": f"*🎯 CVR (登録転換率)*\n{cvr:.2f}%{' (※純減)' if sub_growth < 0 else ''}\n_(登録増 / 再生数増)_"
                     }
                 ]
             },
@@ -724,73 +772,96 @@ class SlackClient:
         # 2. スレッド用の詳細アタッチメントの構築
         thread_attachments = []
 
-        # ① 動画ランキングと初動分析
+        # ① 動画ランキング（折りたたみ防止のため種別ごとにアタッチメント分割）
         if top_videos_rankings:
-            ranking_text = ""
             if top_videos_rankings.get("views"):
-                ranking_text += "*🔥 再生数 Top 3*\n"
-                for idx, v in enumerate(top_videos_rankings["views"][:3], 1):
-                    ranking_text += f"{idx}. {v['title']} (再生: {v['views']:,}回)\n"
-            if top_videos_rankings.get("ctr"):
-                ranking_text += "\n*🎯 クリック率 (CTR) Top 3*\n"
-                for idx, v in enumerate(top_videos_rankings["ctr"][:3], 1):
-                    impr_val = v.get('impressions', 0)
-                    ranking_text += f"{idx}. {v['title']} (CTR: {v['ctr']:.2f}%, インプレッション: {impr_val:,}回)\n"
-            if top_videos_rankings.get("duration"):
-                ranking_text += "\n*⏱️ 平均視聴時間 Top 3*\n"
-                for idx, v in enumerate(top_videos_rankings["duration"][:3], 1):
-                    m, s = divmod(v['averageViewDuration'], 60)
-                    ranking_text += f"{idx}. {v['title']} (平均: {m}分{s}秒)\n"
-            
-            if ranking_text:
+                lines = []
+                for v in top_videos_rankings["views"][:3]:
+                    title = self._format_compact_title(v.get("title", ""))
+                    views_val = v.get("views", 0)
+                    lines.append(f"• 🎬 *{title}*: 👁️ {views_val:,}")
                 thread_attachments.append({
-                    "title": "🎬 動画パフォーマンスランキング（前月）",
-                    "color": "#ff9900",
-                    "text": ranking_text.strip(),
+                    "title": "🔥 再生数 Top 3（前月）",
+                    "color": "#ff4757",
+                    "text": "\n".join(lines),
+                    "mrkdwn_in": ["text"]
+                })
+
+            if top_videos_rankings.get("ctr"):
+                lines = []
+                for v in top_videos_rankings["ctr"][:3]:
+                    title = self._format_compact_title(v.get("title", ""))
+                    ctr_val = v.get("ctr", 0.0)
+                    impr_val = v.get("impressions", 0)
+                    lines.append(f"• 🎬 *{title}*: 🎯 CTR: {ctr_val:.2f}% | 📢 IMP: {impr_val:,}")
+                thread_attachments.append({
+                    "title": "🎯 CTR Top 3（前月）",
+                    "color": "#1e90ff",
+                    "text": "\n".join(lines),
+                    "mrkdwn_in": ["text"]
+                })
+
+            if top_videos_rankings.get("duration"):
+                lines = []
+                for v in top_videos_rankings["duration"][:3]:
+                    title = self._format_compact_title(v.get("title", ""))
+                    dur_str = self._format_duration(v.get("averageViewDuration"))
+                    lines.append(f"• 🎬 *{title}*: {dur_str}")
+                thread_attachments.append({
+                    "title": "⏱️ AVD Top 3（前月）",
+                    "color": "#a55eea",
+                    "text": "\n".join(lines),
                     "mrkdwn_in": ["text"]
                 })
 
         # ② 初動比較分析
         if initial_performances:
-            init_text = ""
+            lines = []
             for v_id, perf in initial_performances.items():
                 if not perf.get("performances"):
                     continue
-                init_text += f"*【{perf['title']}】*\n"
+                title = self._format_compact_title(perf.get("title", ""))
+                lines.append(f"*🎬 {title}*")
                 for p in perf["performances"]:
                     days = "24時間" if p["age_days"] == 1 else "7日間"
                     ratio = (p["target_views"] / p["avg_views"] - 1) * 100 if p["avg_views"] > 0 else 0
                     sign = "+" if ratio >= 0 else ""
-                    init_text += f" - 公開{days}再生数: {p['target_views']:,}回 (過去平均比: {sign}{ratio:.1f}%)\n"
+                    t_views = p.get("target_views", 0)
+                    lines.append(f" • 🚀 {days}: 👁️ {t_views:,} (過去平均比: {sign}{ratio:.1f}%)")
             
-            if init_text:
+            if lines:
                 thread_attachments.append({
                     "title": "📈 新着動画の初動パフォーマンス比較",
                     "color": "#36a64f",
-                    "text": init_text.strip(),
+                    "text": "\n".join(lines),
                     "mrkdwn_in": ["text"]
                 })
 
         # ③ 流入元と視聴者層分析
         audience_and_traffic_text = ""
         if traffic_sources:
-            audience_and_traffic_text += "*🚦 トラフィックソース割合*\n"
+            traffic_lines = ["*🚦 トラフィックソース Top 3*"]
             total_views = sum(s["views"] for s in traffic_sources)
             for s in traffic_sources[:3]:
                 percentage = (s["views"] / total_views * 100) if total_views > 0 else 0
-                audience_and_traffic_text += f" - {s['source_type']}: {percentage:.1f}% ({s['views']:,}回)\n"
+                views_val = s.get("views", 0)
+                traffic_lines.append(f"• {s['source_type']}: {percentage:.1f}% (👁️ {views_val:,})")
+            audience_and_traffic_text += "\n".join(traffic_lines)
         
         if subscriber_views:
-            audience_and_traffic_text += "\n*👥 登録状況別の視聴者割合*\n"
+            sub_lines = []
             sub_views = subscriber_views.get("SUBSCRIBED", {}).get("views", 0)
             unsub_views = subscriber_views.get("UNSUBSCRIBED", {}).get("views", 0)
             total_sub_views = sub_views + unsub_views
             if total_sub_views > 0:
                 sub_pct = sub_views / total_sub_views * 100
                 unsub_pct = unsub_views / total_sub_views * 100
-                audience_and_traffic_text += f" - 登録者: {sub_pct:.1f}% / 未登録者: {unsub_pct:.1f}%\n"
+                prefix = "\n\n" if audience_and_traffic_text else ""
+                sub_lines.append(f"{prefix}*👥 視聴者の登録状況*")
+                sub_lines.append(f"• 登録済: {sub_pct:.1f}% | 未登録: {unsub_pct:.1f}%")
+                audience_and_traffic_text += "\n".join(sub_lines)
 
-        if audience_and_traffic_text:
+        if audience_and_traffic_text.strip():
             thread_attachments.append({
                 "title": "📊 視聴者流入元 ＆ 登録者視聴比率",
                 "color": "#1abc9c",
@@ -800,40 +871,40 @@ class SlackClient:
 
         # ④ 視聴維持率（離脱・リピート）分析
         if retentions:
-            ret_text = ""
+            ret_lines = []
             for v_id, ret in retentions.items():
                 if not ret.get("drop_points") and not ret.get("repeat_points"):
                     continue
-                ret_text += f"*【{ret['title']}】*\n"
+                title = self._format_compact_title(ret.get("title", ""))
+                ret_lines.append(f"*🎬 {title}*")
                 if ret.get("drop_points"):
-                    ret_text += " ⚠️ *離脱注意ポイント*:\n"
                     for dp in ret["drop_points"]:
-                        ret_text += f"   - 動画の {dp['percent']}% 地点 (前区間比 -{dp['diff']:.1f}%)\n"
+                        ret_lines.append(f" • ⚠️ 離脱注意: {dp['percent']}%地点 (前区間比 -{dp['diff']:.1f}%)")
                 if ret.get("repeat_points"):
-                    ret_text += " ✨ *繰り返し再生・維持ポイント*:\n"
                     for rp in ret["repeat_points"]:
-                        ret_text += f"   - 動画の {rp['percent']}% 地点 (前区間比 +{rp['diff']:.1f}%)\n"
+                        ret_lines.append(f" • ✨ 再生維持: {rp['percent']}%地点 (前区間比 +{rp['diff']:.1f}%)")
             
-            if ret_text:
+            if ret_lines:
                 thread_attachments.append({
                     "title": "⏱️ 視聴維持率（離脱・リピート）分析",
                     "color": "#9b59b6",
-                    "text": ret_text.strip(),
+                    "text": "\n".join(ret_lines),
                     "mrkdwn_in": ["text"]
                 })
 
         # ⑤ コメント要約（存在する場合のみ）
         if comment_analyses:
-            comm_text = ""
+            comm_lines = []
             for v_id, comm in comment_analyses.items():
                 if comm.get("summary"):
-                    comm_text += f"*【{comm['title']}】*\n{comm['summary']}\n\n"
+                    title = self._format_compact_title(comm.get("title", ""))
+                    comm_lines.append(f"*🎬 {title}*\n{comm['summary']}")
             
-            if comm_text:
+            if comm_lines:
                 thread_attachments.append({
                     "title": "💬 視聴者コメント分析・要約",
                     "color": "#e74c3c",
-                    "text": comm_text.strip(),
+                    "text": "\n\n".join(comm_lines),
                     "mrkdwn_in": ["text"]
                 })
 
