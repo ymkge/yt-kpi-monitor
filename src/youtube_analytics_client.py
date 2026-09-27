@@ -238,8 +238,39 @@ class YouTubeAnalyticsClient:
         if not reports:
             return {}
 
-        # 3. レポートのダウンロードと集計
-        video_stats = {vid: {"impressions": 0, "clicks_accumulated": 0.0} for vid in video_ids}
+        # 3. レポートのソートとダウンロード・デデュープ集計
+        target_video_ids = set(video_ids)
+
+        def _safe_int(val, default=0):
+            if val is None or val == "":
+                return default
+            try:
+                return int(val)
+            except (ValueError, TypeError):
+                return default
+
+        def _safe_float(val, default=0.0):
+            if val is None or val == "":
+                return default
+            try:
+                return float(val)
+            except (ValueError, TypeError):
+                return default
+
+        def _parse_create_time(r):
+            ct = r.get("createTime", "")
+            if not ct:
+                return datetime.min.replace(tzinfo=timezone.utc)
+            try:
+                return datetime.fromisoformat(ct.replace("Z", "+00:00"))
+            except Exception:
+                return datetime.min.replace(tzinfo=timezone.utc)
+
+        # createTime の昇順（古い順）にソートして処理することで、同一日付のデータは自然に最新値で上書きされる
+        reports.sort(key=_parse_create_time)
+
+        # key: (video_id, normalized_date), value: {"impressions": int, "ctr": float}
+        daily_records = {}
         headers = {"Authorization": f"Bearer {self.credentials.token}"}
 
         for report in reports:
@@ -266,21 +297,34 @@ class YouTubeAnalyticsClient:
                     reader = csv.DictReader(f)
                     for row in reader:
                         v_id = row.get("video_id")
-                        if v_id in video_stats:
-                            imprs = int(row.get("video_thumbnail_impressions", 0))
-                            ctr = float(row.get("video_thumbnail_impressions_ctr", 0.0))
+                        if v_id in target_video_ids:
+                            raw_date = str(row.get("date", "")).strip().replace("-", "")
+                            if not raw_date:
+                                continue
+                            imprs = _safe_int(row.get("video_thumbnail_impressions"))
+                            ctr = _safe_float(row.get("video_thumbnail_impressions_ctr"))
                             
-                            video_stats[v_id]["impressions"] += imprs
-                            video_stats[v_id]["clicks_accumulated"] += imprs * ctr
+                            daily_records[(v_id, raw_date)] = {
+                                "impressions": imprs,
+                                "ctr": ctr
+                            }
             except Exception as err:
                 print(f"Warning: Failed to process report {report.get('id')}: {err}")
 
-        # 4. CTRの逆算と整形
+        # 4. デデュープ後の日別レコードから全体のインプレッション数と加重平均CTRを集計
+        video_stats = {vid: {"impressions": 0, "clicks_accumulated": 0.0} for vid in target_video_ids}
+        for (v_id, _date), stats in daily_records.items():
+            imprs = stats["impressions"]
+            ctr = stats["ctr"]
+            video_stats[v_id]["impressions"] += imprs
+            video_stats[v_id]["clicks_accumulated"] += imprs * ctr
+
         result = {}
-        for v_id, stats in video_stats.items():
+        for v_id in video_ids:
+            stats = video_stats.get(v_id, {"impressions": 0, "clicks_accumulated": 0.0})
             total_imprs = stats["impressions"]
             clicks = stats["clicks_accumulated"]
-            overall_ctr = (clicks / total_imprs * 100) if total_imprs > 0 else 0.0
+            overall_ctr = round((clicks / total_imprs * 100), 2) if total_imprs > 0 else 0.0
             
             result[v_id] = {
                 "impressions": total_imprs,
