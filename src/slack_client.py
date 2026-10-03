@@ -55,7 +55,8 @@ class SlackClient:
             return " 🔴 *要改善* (ターゲット層に届いていない)"
 
     def _build_video_diff_block(self, title_header, video_list, is_increase=True, max_display=3,
-                                metric_name="いいね", total_prefix="計", total_field="current_likes", total_plus_sign=False):
+                                metric_name="いいね", total_prefix="計", total_field="current_likes",
+                                total_plus_sign=False, unit="", diff_label="前日比"):
         """
         動画の増減リストからSlack Block Kitセクションを生成する汎用メソッド。
         表示上限(max_display=3)と1行インライン表示で折りたたみ(Show more)を防止する。
@@ -73,16 +74,17 @@ class SlackClient:
             tag = "🆕" if v.get("is_new") else "🎬"
             raw_title = v.get("title", "")
             truncated_title = raw_title[:22] + "..." if len(raw_title) > 25 else raw_title
-            diff_str = f"+{v['diff']:,}" if is_increase else f"{v['diff']:,}"
+            diff_str = f"+{v['diff']:,}{unit}" if is_increase else f"{v['diff']:,}{unit}"
             
             total_val = v.get(total_field)
             if total_val is not None:
                 plus = "+" if total_plus_sign and total_val > 0 else ""
-                total_str = f" ({total_prefix}{plus}{total_val:,})"
+                space = " " if unit else ""
+                total_str = f" ({total_prefix}{space}{plus}{total_val:,}{unit})"
             else:
                 total_str = ""
                 
-            details.append(f"• {tag} *{truncated_title}*: 前日比 *{diff_str}*{total_str}")
+            details.append(f"• {tag} *{truncated_title}*: {diff_label} *{diff_str}*{total_str}")
         
         if remaining_count > 0:
             action_label = "増加" if is_increase else "減少"
@@ -106,7 +108,9 @@ class SlackClient:
             metric_name="いいね",
             total_prefix="計",
             total_field="current_likes",
-            total_plus_sign=False
+            total_plus_sign=False,
+            unit="",
+            diff_label="前日比"
         )
 
     def _build_subscriber_diff_block(self, title_header, video_list, is_increase=True, max_display=3):
@@ -119,7 +123,9 @@ class SlackClient:
             metric_name="登録者",
             total_prefix="累計",
             total_field="current_subscribers",
-            total_plus_sign=True
+            total_plus_sign=False,
+            unit="人",
+            diff_label="反映分"
         )
 
     def send_kpi_alert(self, current_kpi, previous_kpi=None, recent_videos_kpis=None,
@@ -188,13 +194,13 @@ class SlackClient:
             }
         ]
 
-        # 登録者増減ブロック（サマリの並び順に合わせて「登録者」→「いいね」の順）
-        sub_inc_block = self._build_subscriber_diff_block("👥 登録者が増加した動画", increased_subscriber_videos, is_increase=True)
+        # 登録者増減ブロック（サマリの並び順に合わせて「登録者」→「いいね」の順、遅延情報を明記）
+        sub_inc_block = self._build_subscriber_diff_block("👥 登録者が増加した動画 (2日遅延情報)", increased_subscriber_videos, is_increase=True)
         if sub_inc_block:
             blocks.append(sub_inc_block)
             blocks.append({"type": "divider"})
 
-        sub_dec_block = self._build_subscriber_diff_block("👤 登録者が減少（補正）した動画", decreased_subscriber_videos, is_increase=False)
+        sub_dec_block = self._build_subscriber_diff_block("👤 登録者が減少（補正）した動画 (2日遅延情報)", decreased_subscriber_videos, is_increase=False)
         if sub_dec_block:
             blocks.append(sub_dec_block)
             blocks.append({"type": "divider"})
@@ -210,28 +216,29 @@ class SlackClient:
             blocks.append(dec_block)
             blocks.append({"type": "divider"})
 
+        # 注記（context ブロック: Bot Token送信およびWebhookフォールバックの両方に共通配置）
+        context_elements = [
+            {
+                "type": "mrkdwn",
+                "text": "💬 *直近14日以内に公開された動画の詳細KPIは、このメッセージのスレッドに投稿されています。*"
+            }
+        ]
+        if sub_inc_block or sub_dec_block:
+            context_elements.append({
+                "type": "mrkdwn",
+                "text": "※動画別登録者数は動画再生ページ経由の直接獲得を集計（YouTubeの仕様上、約2〜3日遅れてAPI確定・反映されます。ホーム画面等からの登録は全体サマリに即時反映）。"
+            })
+
+        blocks.append({
+            "type": "context",
+            "elements": context_elements
+        })
+
         # 2. 送信方法の判別（Bot Token優先、Webhookフォールバック）
         use_bot = all([self.bot_token, self.channel])
 
         if use_bot:
             try:
-                context_elements = [
-                    {
-                        "type": "mrkdwn",
-                        "text": "💬 *直近14日以内に公開された動画の詳細KPIは、このメッセージのスレッドに投稿されています。*"
-                    }
-                ]
-                if sub_inc_block or sub_dec_block:
-                    context_elements.append({
-                        "type": "mrkdwn",
-                        "text": "※動画別登録者数は動画再生ページ経由の直接登録を集計（ホーム画面等からの登録は全体サマリに反映）。"
-                    })
-
-                blocks.append({
-                    "type": "context",
-                    "elements": context_elements
-                })
-
                 headers = {
                     "Authorization": f"Bearer {self.bot_token}",
                     "Content-Type": "application/json; charset=utf-8"
