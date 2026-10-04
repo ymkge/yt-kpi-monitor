@@ -27,22 +27,61 @@ def main():
         if not current_kpi:
             print(f"Error: Could not find channel with ID {channel_id}")
             sys.exit(1)
-        
-        # 1.5. 全動画の簡易スタッツ取得と総いいね数・総再生数の算出
+
+        # 2. 前回のKPIを取得（BigQuery）
+        print("Fetching previous KPI from BigQuery...")
+        previous_kpi = bq.fetch_previous_kpi(channel_id)
+        previous_video_kpis = bq.fetch_previous_video_kpis()
+
+        # 2.5. 全動画の簡易スタッツ取得と異常値ガード・フォールバック
         print("Fetching all videos stats...")
         all_videos_stats = yt.get_all_videos_stats(channel_id)
-        current_kpi["total_like_count"] = sum(v["likes"] for v in all_videos_stats)
+
+        for v in all_videos_stats:
+            v_id = v["video_id"]
+            prev_info = previous_video_kpis.get(v_id, {})
+            prev_likes = prev_info.get("likes", 0)
+            prev_views = prev_info.get("views", 0)
+            is_new_video = v_id not in previous_video_kpis
+
+            # likes の異常値・欠落ガード
+            if v.get("likes") is None:
+                if not is_new_video and prev_likes > 0:
+                    print(f"::warning:: Video {v_id} ({v.get('title')}) returned None likes. Preserving previous likes: {prev_likes}")
+                    v["likes"] = prev_likes
+                else:
+                    v["likes"] = 0
+            elif v["likes"] == 0 and not is_new_video and prev_likes >= 3:
+                print(f"::warning:: Video {v_id} ({v.get('title')}) dropped to 0 likes (prev: {prev_likes}). Preserving previous likes to prevent glitch.")
+                v["likes"] = prev_likes
+
+            # views の異常値・欠落ガード
+            if v.get("views") is None:
+                if not is_new_video and prev_views > 0:
+                    print(f"::warning:: Video {v_id} ({v.get('title')}) returned None views. Preserving previous views: {prev_views}")
+                    v["views"] = prev_views
+                else:
+                    v["views"] = 0
+            elif v["views"] == 0 and not is_new_video and prev_views >= 10:
+                print(f"::warning:: Video {v_id} ({v.get('title')}) dropped to 0 views (prev: {prev_views}). Preserving previous views to prevent glitch.")
+                v["views"] = prev_views
+
+        # 総いいね数の算出と急変ガード
+        calculated_total_likes = sum(v["likes"] for v in all_videos_stats)
+        prev_total_likes = previous_kpi.get("total_like_count", 0) if previous_kpi else 0
+
+        if prev_total_likes >= 50 and (calculated_total_likes - prev_total_likes) / prev_total_likes <= -0.20:
+            print(f"::warning:: Total likes dropped abruptly: {calculated_total_likes} vs previous {prev_total_likes} "
+                  f"({(calculated_total_likes - prev_total_likes) / prev_total_likes:.1%}). Guard triggered: preserving previous total_like_count.")
+            current_kpi["total_like_count"] = prev_total_likes
+        else:
+            current_kpi["total_like_count"] = calculated_total_likes
 
         # 全動画の最新再生数合計を算出（channels.listのキャッシュ遅延回避 #67）
         total_video_views = sum(v["views"] for v in all_videos_stats)
         if total_video_views > current_kpi["view_count"]:
             print(f"Updating view_count from channels.list ({current_kpi['view_count']:,}) to real-time videos sum ({total_video_views:,})")
             current_kpi["view_count"] = total_video_views
-
-        # 2. 前回のKPIを取得
-        print("Fetching previous KPI from BigQuery...")
-        previous_kpi = bq.fetch_previous_kpi(channel_id)
-        previous_video_kpis = bq.fetch_previous_video_kpis()
 
         # 3. 今回のKPIを保存
         print("Saving current KPI to BigQuery...")
@@ -149,10 +188,16 @@ def main():
                         v_id = v["video_id"]
                         
                         analytics_reflected = v_id in metrics_data
-                        v_metrics = metrics_data.get(v_id, {})
-                        
-                        v_metrics["views"] = v["realtime_views"]
-                        v_metrics["likes"] = v["realtime_likes"]
+                        prev_v = previous_video_kpis.get(v_id, {})
+                        rt_views = v.get("realtime_views")
+                        rt_likes = v.get("realtime_likes")
+                        if rt_views is None:
+                            rt_views = prev_v.get("views", 0)
+                        if rt_likes is None:
+                            rt_likes = prev_v.get("likes", 0)
+
+                        v_metrics["views"] = rt_views
+                        v_metrics["likes"] = rt_likes
                         
                         v_metrics["red_views"] = v_metrics.get("red_views") if analytics_reflected else None
                         v_metrics["engaged_views"] = v_metrics.get("engaged_views") if analytics_reflected else None
@@ -168,7 +213,6 @@ def main():
                             v_metrics["ctr"] = None
                         
                         # 前日比差分の算出（安全ガード）
-                        prev_v = previous_video_kpis.get(v_id)
                         diffs = {}
                         
                         def calc_diff(curr_val, prev_val):
