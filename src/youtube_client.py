@@ -1,9 +1,12 @@
 import os
+import time
+import logging
 from datetime import datetime, timezone, timedelta
 from googleapiclient.discovery import build
 from dotenv import load_dotenv
 
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 class YouTubeClient:
     def __init__(self, api_key=None):
@@ -11,6 +14,70 @@ class YouTubeClient:
         if not self.api_key:
             raise ValueError("YOUTUBE_API_KEY is not set.")
         self.youtube = build("youtube", "v3", developerKey=self.api_key, static_discovery=False)
+
+    def _fetch_videos_statistics_with_retry(self, video_ids, chunk_size=25, max_retries=2):
+        """
+        動画IDリストを受け取り、チャンク分割（デフォルト25件）して videos().list を実行する。
+        APIの一時的な脱落（silent drop）が発生した場合は missing_ids を指数バックオフ付きで自動リトライする。
+        それでも取得できなかったIDは {"views": None, "likes": None} を返す。
+        """
+        if not video_ids:
+            return {}
+
+        stats_map = {}
+        for i in range(0, len(video_ids), chunk_size):
+            chunk = video_ids[i:i + chunk_size]
+            current_target_ids = list(chunk)
+
+            for attempt in range(max_retries + 1):
+                if not current_target_ids:
+                    break
+                try:
+                    video_request = self.youtube.videos().list(
+                        part="statistics",
+                        id=",".join(current_target_ids)
+                    )
+                    video_response = video_request.execute()
+
+                    found_ids = set()
+                    for item in video_response.get("items", []):
+                        v_id = item["id"]
+                        found_ids.add(v_id)
+                        statistics = item.get("statistics", {})
+                        view_count = statistics.get("viewCount")
+                        like_count = statistics.get("likeCount")
+                        stats_map[v_id] = {
+                            "views": int(view_count) if view_count is not None else None,
+                            "likes": int(like_count) if like_count is not None else None
+                        }
+
+                    missing_ids = [vid for vid in current_target_ids if vid not in found_ids]
+                    if not missing_ids:
+                        break
+
+                    if attempt < max_retries:
+                        sleep_time = 0.5 * (2 ** attempt)
+                        logger.warning(
+                            f"YouTube API omitted {len(missing_ids)} videos from response in chunk (attempt {attempt + 1}/{max_retries + 1}). "
+                            f"Retrying after {sleep_time}s: {missing_ids}"
+                        )
+                        time.sleep(sleep_time)
+                        current_target_ids = missing_ids
+                    else:
+                        logger.error(
+                            f"YouTube API failed to return stats for {len(missing_ids)} videos after {max_retries} retries: {missing_ids}"
+                        )
+                        for vid in missing_ids:
+                            stats_map[vid] = {"views": None, "likes": None}
+                except Exception as e:
+                    logger.error(f"Error calling videos().list on attempt {attempt + 1}: {e}")
+                    if attempt < max_retries:
+                        time.sleep(0.5 * (2 ** attempt))
+                    else:
+                        for vid in current_target_ids:
+                            stats_map[vid] = {"views": None, "likes": None}
+
+        return stats_map
 
     def get_recent_videos(self, channel_id, max_days=14):
         """
@@ -62,27 +129,13 @@ class YouTubeClient:
         if not raw_videos:
             return []
 
-        # 3. videos().list を使ってリアルタイムの再生数といいね数を一括取得
-        realtime_stats = {}
-        for i in range(0, len(video_ids), 50):
-            chunk_ids = video_ids[i:i+50]
-            video_request = self.youtube.videos().list(
-                part="statistics",
-                id=",".join(chunk_ids)
-            )
-            video_response = video_request.execute()
-            for item in video_response.get("items", []):
-                v_id = item["id"]
-                stats = item.get("statistics", {})
-                realtime_stats[v_id] = {
-                    "views": int(stats.get("viewCount", 0)),
-                    "likes": int(stats.get("likeCount", 0))
-                }
+        # 3. videos().list を使ってリアルタイムの再生数といいね数を一括取得（リトライ付き）
+        realtime_stats = self._fetch_videos_statistics_with_retry(video_ids, chunk_size=25, max_retries=2)
 
         # 4. データをマージして返却
         recent_videos = []
         for v in raw_videos:
-            stats = realtime_stats.get(v["video_id"], {"views": 0, "likes": 0})
+            stats = realtime_stats.get(v["video_id"], {"views": None, "likes": None})
             recent_videos.append({
                 "video_id": v["video_id"],
                 "title": v["title"],
@@ -167,23 +220,10 @@ class YouTubeClient:
                 break
                 
             video_ids = [v["video_id"] for v in video_data]
-            video_request = self.youtube.videos().list(
-                part="statistics",
-                id=",".join(video_ids)
-            )
-            video_response = video_request.execute()
-            
-            stats_map = {}
-            for video in video_response.get("items", []):
-                v_id = video["id"]
-                stats = video.get("statistics", {})
-                stats_map[v_id] = {
-                    "views": int(stats.get("viewCount", 0)),
-                    "likes": int(stats.get("likeCount", 0))
-                }
+            stats_map = self._fetch_videos_statistics_with_retry(video_ids, chunk_size=25, max_retries=2)
             
             for v in video_data:
-                stats = stats_map.get(v["video_id"], {"views": 0, "likes": 0})
+                stats = stats_map.get(v["video_id"], {"views": None, "likes": None})
                 v["views"] = stats["views"]
                 v["likes"] = stats["likes"]
                 videos_stats.append(v)
@@ -199,7 +239,7 @@ class YouTubeClient:
         全動画のいいね数の合計を取得する。
         """
         videos_stats = self.get_all_videos_stats(channel_id)
-        return sum(v["likes"] for v in videos_stats)
+        return sum(v["likes"] for v in videos_stats if v.get("likes") is not None)
 
 
     def get_video_comments(self, video_id, max_results=100):
