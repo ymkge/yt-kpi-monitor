@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import MagicMock, patch
 from src.slack_client import SlackClient
 
 class TestSlackClient(unittest.TestCase):
@@ -142,6 +143,45 @@ class TestSlackClient(unittest.TestCase):
             self.assertTrue(len(context_blocks) > 0)
             context_texts = [el.get("text", "") for el in context_blocks[0].get("elements", [])]
             self.assertTrue(any("YouTubeの仕様上、約2〜3日遅れてAPI確定・反映されます" in t for t in context_texts))
+            # recent_videos_kpis が未指定のため、スレッド誘導文は含まれない
+            self.assertFalse(any("スレッドに投稿されています" in t for t in context_texts))
+
+    def test_send_kpi_alert_with_recent_videos_kpis_shows_thread_guide(self):
+        """recent_videos_kpis がある場合はスレッド誘導文が表示されること"""
+        current_kpi = {"channel_title": "Ch", "subscriber_count": 40, "view_count": 16000, "total_like_count": 227}
+        recent_kpis = [{"video_id": "v1", "title": "Vid 1"}]
+
+        with patch("requests.post") as mock_post:
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = {"ok": True, "ts": "12345.678"}
+            mock_post.return_value = mock_resp
+            self.slack.bot_token = "xoxb-dummy"
+            self.slack.channel = "C12345"
+
+            self.slack.send_kpi_alert(current_kpi=current_kpi, recent_videos_kpis=recent_kpis)
+            payload = mock_post.call_args[1]["json"]
+            blocks = payload["blocks"]
+            context_blocks = [b for b in blocks if b.get("type") == "context"]
+            self.assertEqual(len(context_blocks), 1)
+            context_texts = [el.get("text", "") for el in context_blocks[0].get("elements", [])]
+            self.assertTrue(any("スレッドに投稿されています" in t for t in context_texts))
+
+    def test_send_kpi_alert_without_any_context_elements_does_not_create_empty_context_block(self):
+        """recent_videos_kpis も登録者増減もない場合、不正な空 context ブロックが生成されないこと"""
+        current_kpi = {"channel_title": "Ch", "subscriber_count": 40, "view_count": 16000, "total_like_count": 227}
+
+        with patch("requests.post") as mock_post:
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = {"ok": True, "ts": "12345.678"}
+            mock_post.return_value = mock_resp
+            self.slack.bot_token = "xoxb-dummy"
+            self.slack.channel = "C12345"
+
+            self.slack.send_kpi_alert(current_kpi=current_kpi)
+            payload = mock_post.call_args[1]["json"]
+            blocks = payload["blocks"]
+            context_blocks = [b for b in blocks if b.get("type") == "context"]
+            self.assertEqual(len(context_blocks), 0)
 
 if __name__ == "__main__":
     unittest.main()

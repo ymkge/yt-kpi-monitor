@@ -217,22 +217,23 @@ class SlackClient:
             blocks.append({"type": "divider"})
 
         # 注記（context ブロック: Bot Token送信およびWebhookフォールバックの両方に共通配置）
-        context_elements = [
-            {
+        context_elements = []
+        if recent_videos_kpis:
+            context_elements.append({
                 "type": "mrkdwn",
                 "text": "💬 *直近14日以内に公開された動画の詳細KPIは、このメッセージのスレッドに投稿されています。*"
-            }
-        ]
+            })
         if sub_inc_block or sub_dec_block:
             context_elements.append({
                 "type": "mrkdwn",
                 "text": "※動画別登録者数は動画再生ページ経由の直接獲得を集計（YouTubeの仕様上、約2〜3日遅れてAPI確定・反映されます。ホーム画面等からの登録は全体サマリに即時反映）。"
             })
 
-        blocks.append({
-            "type": "context",
-            "elements": context_elements
-        })
+        if context_elements:
+            blocks.append({
+                "type": "context",
+                "elements": context_elements
+            })
 
         # 2. 送信方法の判別（Bot Token優先、Webhookフォールバック）
         use_bot = all([self.bot_token, self.channel])
