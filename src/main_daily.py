@@ -188,6 +188,7 @@ def main():
                         v_id = v["video_id"]
                         
                         analytics_reflected = v_id in metrics_data
+                        v_metrics = dict(metrics_data.get(v_id, {})) if analytics_reflected else {}
                         prev_v = previous_video_kpis.get(v_id, {})
                         rt_views = v.get("realtime_views")
                         rt_likes = v.get("realtime_likes")
