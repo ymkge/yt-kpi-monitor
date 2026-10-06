@@ -2,7 +2,7 @@ name: Weekly Strategy Report
 
 on:
   schedule:
-    - cron: '13 11 * * 1' # UTC 11:13 Monday is JST 20:13 Monday
+    - cron: '28 11 * * 1' # UTC 11:28 Monday is JST 20:28 Monday
   workflow_dispatch:
 
 env:
