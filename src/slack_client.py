@@ -1,8 +1,10 @@
 import os
 import requests
+from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 
 load_dotenv()
+JST = timezone(timedelta(hours=9))
 
 class SlackClient:
     # CTR評価の閾値定数 (音楽BGMチャンネル向け調整)
@@ -54,6 +56,26 @@ class SlackClient:
         else:
             return " 🔴 *要改善* (ターゲット層に届いていない)"
 
+    @staticmethod
+    def _escape_slack_mrkdwn(text: str) -> str:
+        """Slack mrkdwnリンク構文内で壊れないよう特殊文字をエスケープ"""
+        if not text:
+            return ""
+        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    @staticmethod
+    def _format_published_date(published_at: str) -> str:
+        """published_at (ISO 8601 UTC) を JST に変換し、' (MM/DD)' 形式で返す"""
+        if not published_at:
+            return ""
+        try:
+            iso_str = published_at.replace("Z", "+00:00")
+            dt = datetime.fromisoformat(iso_str)
+            dt_jst = dt.astimezone(JST)
+            return dt_jst.strftime(" (%m/%d)")
+        except Exception:
+            return ""
+
     def _build_video_diff_block(self, title_header, video_list, is_increase=True, max_display=3,
                                 metric_name="いいね", total_prefix="計", total_field="current_likes",
                                 total_plus_sign=False, unit="", diff_label="前日比"):
@@ -74,6 +96,16 @@ class SlackClient:
             tag = "🆕" if v.get("is_new") else "🎬"
             raw_title = v.get("title", "")
             truncated_title = raw_title[:22] + "..." if len(raw_title) > 25 else raw_title
+            escaped_title = self._escape_slack_mrkdwn(truncated_title)
+
+            v_id = v.get("video_id")
+            if v_id:
+                title_part = f"*<https://youtu.be/{v_id}|{escaped_title}>*"
+            else:
+                title_part = f"*{escaped_title}*"
+
+            date_part = self._format_published_date(v.get("published_at"))
+
             diff_str = f"+{v['diff']:,}{unit}" if is_increase else f"{v['diff']:,}{unit}"
             
             total_val = v.get(total_field)
@@ -84,7 +116,7 @@ class SlackClient:
             else:
                 total_str = ""
                 
-            details.append(f"• {tag} *{truncated_title}*: {diff_label} *{diff_str}*{total_str}")
+            details.append(f"• {tag} {title_part}{date_part}: {diff_label} *{diff_str}*{total_str}")
         
         if remaining_count > 0:
             action_label = "増加" if is_increase else "減少"
@@ -444,12 +476,18 @@ class SlackClient:
             raw_title = video.get("title", "")
             truncated_title = raw_title[:22] + "..." if len(raw_title) > 25 else raw_title
 
-            attachments.append({
+            attachment_data = {
                 "title": f"🎬 {idx}. {truncated_title}",
                 "color": "#70a1ff" if idx % 2 == 0 else "#1e90ff",
                 "text": video_text,
                 "mrkdwn_in": ["text"]
-            })
+            }
+            v_id = video.get("video_id")
+            if v_id:
+                attachment_data["title_link"] = f"https://youtu.be/{v_id}"
+                attachment_data["thumb_url"] = f"https://i.ytimg.com/vi/{v_id}/mqdefault.jpg"
+
+            attachments.append(attachment_data)
 
         attachments.append({
             "color": "#a4b0be",
