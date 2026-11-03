@@ -128,11 +128,20 @@ def main():
         view_g = summary_data['view_growth']
         like_g = summary_data['like_growth']
 
+        # CVR (登録転換率) の算出（ゼロ除算・純減対策）
+        sub_growth_val = sub_g or 0
+        view_growth_val = view_g or 0
+        cvr = (sub_growth_val / view_growth_val * 100) if view_growth_val > 0 else 0.0
+        summary_data["cvr"] = cvr
+
+        cvr_note = " (※登録解除が上回り純減)" if sub_growth_val < 0 else ""
+
         kpi_summary_text = f"""
 - 期間: {summary_data['start_date']} 〜 {summary_data['end_date']}
 - 登録者数増減: {sub_g:+,} 人 (現在: {summary_data['current_subscribers']:,} 人)
 - 総再生数増減: {view_g:+,} 回 (現在: {summary_data['current_views']:,} 回)
 - いいね数増減: {like_g:+,} 回 (現在: {summary_data['current_likes']:,} 回)
+- 登録転換率 (CVR): {cvr:.2f}%{cvr_note} (登録者増分 ÷ 再生数増分)
 """
 
         # ランキング情報がある場合はプロンプトに補足
