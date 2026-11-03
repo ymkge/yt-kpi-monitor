@@ -277,5 +277,93 @@ class TestSlackClient(unittest.TestCase):
             context_blocks = [b for b in blocks if b.get("type") == "context"]
             self.assertEqual(len(context_blocks), 0)
 
+    def test_send_weekly_report_cvr(self):
+        """send_weekly_report で親メッセージの fields に CVR (登録転換率) が正しく含まれること"""
+        summary_data = {
+            "channel_title": "テストチャンネル",
+            "start_date": "2026-10-26",
+            "end_date": "2026-11-01",
+            "subscriber_growth": 5,
+            "view_growth": 1000,
+            "like_growth": 20,
+            "current_subscribers": 50,
+            "cvr": 0.50
+        }
+
+        with patch("requests.post") as mock_post:
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = {"ok": True, "ts": "12345.678"}
+            mock_post.return_value = mock_resp
+            self.slack.bot_token = "xoxb-dummy"
+            self.slack.channel = "C12345"
+
+            self.slack.send_weekly_report(
+                summary_data=summary_data,
+                advice_text="アドバイステキスト"
+            )
+            # 親メッセージ（1回目のAPI呼び出し）の payload を取得
+            payload = mock_post.call_args_list[0][1]["json"]
+            blocks = payload["blocks"]
+
+            # fields を探す
+            fields_block = [b for b in blocks if b.get("type") == "section" and "fields" in b]
+            self.assertEqual(len(fields_block), 1)
+            field_texts = [f["text"] for f in fields_block[0]["fields"]]
+            self.assertEqual(len(field_texts), 4) # 4項目グリッド
+
+            # CVR 項目の検証
+            cvr_field = [t for t in field_texts if "*🎯 CVR (登録転換率)*" in t]
+            self.assertEqual(len(cvr_field), 1)
+            self.assertIn("0.50%", cvr_field[0])
+            self.assertIn("_(登録増 / 再生数増)_", cvr_field[0])
+
+    def test_send_weekly_report_cvr_zero_views_and_net_loss(self):
+        """ゼロ除算時および登録者純減時の CVR 表示検証"""
+        # 1. ゼロ除算ケース
+        summary_zero = {
+            "channel_title": "Ch",
+            "start_date": "2026-10-26",
+            "end_date": "2026-11-01",
+            "subscriber_growth": 0,
+            "view_growth": 0,
+            "like_growth": 0,
+            "current_subscribers": 50
+        }
+        # 2. 純減ケース
+        summary_loss = {
+            "channel_title": "Ch",
+            "start_date": "2026-10-26",
+            "end_date": "2026-11-01",
+            "subscriber_growth": -2,
+            "view_growth": 1000,
+            "like_growth": 10,
+            "current_subscribers": 48
+        }
+
+        with patch("requests.post") as mock_post:
+            mock_resp = MagicMock()
+            mock_resp.json.return_value = {"ok": True, "ts": "12345.678"}
+            mock_post.return_value = mock_resp
+            self.slack.bot_token = "xoxb-dummy"
+            self.slack.channel = "C12345"
+
+            # ゼロ除算テスト
+            self.slack.send_weekly_report(summary_data=summary_zero, advice_text="advice")
+            payload_zero = mock_post.call_args_list[0][1]["json"]
+            fields_block_zero = [b for b in payload_zero["blocks"] if b.get("type") == "section" and "fields" in b][0]
+            field_texts_zero = [f["text"] for f in fields_block_zero["fields"]]
+            cvr_field_zero = [t for t in field_texts_zero if "*🎯 CVR (登録転換率)*" in t][0]
+            self.assertIn("0.00%", cvr_field_zero)
+
+            # 純減テスト
+            mock_post.reset_mock()
+            self.slack.send_weekly_report(summary_data=summary_loss, advice_text="advice")
+            payload_loss = mock_post.call_args_list[0][1]["json"]
+            fields_block_loss = [b for b in payload_loss["blocks"] if b.get("type") == "section" and "fields" in b][0]
+            field_texts_loss = [f["text"] for f in fields_block_loss["fields"]]
+            cvr_field_loss = [t for t in field_texts_loss if "*🎯 CVR (登録転換率)*" in t][0]
+            self.assertIn("-0.20%", cvr_field_loss)
+            self.assertIn("(※純減)", cvr_field_loss)
+
 if __name__ == "__main__":
     unittest.main()

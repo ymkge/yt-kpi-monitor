@@ -556,6 +556,13 @@ class SlackClient:
         start_date = summary_data["start_date"]
         end_date = summary_data["end_date"]
 
+        # CVR (登録転換率) の取得または算出（ゼロ除算・純減対策）
+        sub_growth = summary_data.get("subscriber_growth") or 0
+        view_growth = summary_data.get("view_growth") or 0
+        cvr = summary_data.get("cvr")
+        if cvr is None:
+            cvr = (sub_growth / view_growth * 100) if view_growth > 0 else 0.0
+
         # 1. 親メッセージ (Block Kit) の構築
         blocks = [
             {
@@ -590,6 +597,10 @@ class SlackClient:
                     {
                         "type": "mrkdwn",
                         "text": f"*👍 いいね数増分*\n{self._format_signed_val(summary_data['like_growth'], ' 回')}"
+                    },
+                    {
+                        "type": "mrkdwn",
+                        "text": f"*🎯 CVR (登録転換率)*\n{cvr:.2f}%{' (※純減)' if sub_growth < 0 else ''}\n_(登録増 / 再生数増)_"
                     }
                 ]
             },
