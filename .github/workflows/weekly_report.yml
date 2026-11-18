@@ -2,7 +2,7 @@ name: Weekly Strategy Report
 
 on:
   schedule:
-    - cron: '28 11 * * 1' # UTC 11:28 Monday is JST 20:28 Monday
+    - cron: '17 6 * * 1' # UTC 06:17 Monday is JST 15:17 Monday (Avoid US peak hours & GitHub Actions queue delay)
   workflow_dispatch:
 
 env:

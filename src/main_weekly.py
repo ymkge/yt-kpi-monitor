@@ -24,9 +24,10 @@ def main():
         gemini = GeminiClient()
         slack = SlackClient()
 
-        # 1. 週次サマリデータをBigQueryから取得
+        # 1. 週次サマリデータをBigQueryから取得（前日=日曜日を基準に直近1週間を集計）
         print("Fetching weekly summary from BigQuery...")
-        summary_data = bq.fetch_weekly_summary(channel_id)
+        yesterday_str = (datetime.now(JST) - timedelta(days=1)).strftime("%Y-%m-%d")
+        summary_data = bq.fetch_weekly_summary(channel_id, today_str=yesterday_str)
         if not summary_data:
             print("No data found for the last 7 days. Skipping report.")
             return
