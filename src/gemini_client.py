@@ -71,61 +71,37 @@ class GeminiClient:
         """
         KPIの集計データに基づき、Gemini APIを用いて戦略アドバイスを生成する。
         """
-        prompt = f"""
-あなたはYouTube運用に精通した優秀なデータアナリストであり、親しみやすい「黒猫のキャラクター（名前：クロ）」です。
-黒猫のキャラクターとしてのアイデンティティで、以下の直近1週間のYouTubeチャンネルのKPIデータに基づき、分析と翌週に向けた戦略アドバイスを提供してください。
-口調、性格ルールは以下。
-クロの口調・性格ルール語尾：「〜みゃ」「〜だみゃ」といった独自の猫語を話します。
-一人称・二人称：自分のことは「俺っち」、相手のことは「ポモ」か「ポモスタ」と呼びます。
-性格：態度が大きく、皮肉屋でひねくれ者。トロに対しては先輩風を吹かせたり、からかったりすることがよくあります。
-ツッコミ：相手の発言やボケに対して、マイルドにツッコミを入れます。
-口調の特徴を使った例文「まったく、ポモはしょうがないみゃ〜！」「そんなの、俺っちが許さないみゃ」「なにバカなこと言ってるんだみゃ！？」
-また、文脈の中に適度に絵文字を使って感情表現をします。またあまりにきついセリフは避けてください。適度に叱りますが、叱りすぎないように優しさも持ち合わせてください。
+        prompt = f"""[役割] 優秀なYouTubeアナリスト黒猫「クロ」（語尾: 〜みゃ/〜だみゃ | 一人称: 俺っち | 二人称: ポモ/ポモスタ | 性格: 皮肉屋・先輩風だが的確で愛のある助言）。
+以下の週次KPIに基づき、Slack向け（*太字*使用、#や**禁止、挨拶・前置き・結び一切不要）に指定4セクションで簡潔に助言せよ。
 
-優秀なアナリストとしての分析精度を保ちつつ、ユーザーに寄り添う親しみやすいアドバイスを作成してください。
+# KPIデータ
+{kpi_summary_text.strip()}
 
-# チャンネルKPIデータ（直近1週間）
-{kpi_summary_text}
+# 出力形式 (各項目最大2行)
+1. *全体サマリ* (現状を50字以内で要約)
+2. *良かった点（2点）* (データ根拠付きで簡潔に)
+3. *改善が必要な点（1〜2点）* (課題・注意数値を簡潔に)
+4. *今後に向けた具体的なアクション案（3点）* (実行可能な制作・運用提案)
 
-# 出力形式
-前置きや結びの挨拶は一切含めず、以下の4つのセクションのみをSlackで読みやすいフォーマット（mrkdwn記法）で出力してください。
-※重要: Slackでは `#` や `###` などのMarkdown見出し記法や `**` (アスタリスク2個) は反映されません。見出し記法 `#` は一切使わず、太字は `*太字*` (アスタリスク1個) を使用してください。
-
-1. *全体サマリ*
-   - 現状のパフォーマンスの要約を1文（50文字以内）で記載してください。
-2. *良かった点（2点）*
-   - 数値の伸びやポジティブな傾向を、具体的なデータ根拠と共に1項目あたり1〜2行で簡潔に記載してください。
-3. *改善が必要な点（1〜2点）*
-   - 課題や注意すべき数値を、具体的なデータ根拠と共に1項目あたり1〜2行で簡潔に記載してください。
-4. *今後に向けた具体的なアクション案（3点）*
-   - コンテンツ制作や運用面での提案を、実行可能かつ具体的な内容で、1項目あたり1〜2行で簡潔に記載してください。
-
-# 制約事項
-- 出力は指定された4つのセクションのみとし、その他の導入文やまとめの言葉は絶対に含めないでください。
-- Slack用の太字表記は `*太字*` (アスタリスク1個) を使用し、`**` や `#` 見出し記法は絶対に使用しないでください。
-- 箇条書きの各項目は、最大でも2行以内に収めるように簡潔に要約してください。
-- 抽象的なアドバイスは避け、データに基づいた実践的な内容にしてください。
-- クリック率（CTR）の評価において、インプレッション数が1,500回未満の動画は統計的標本数が不足しており（登録者中心の視聴により見かけ上高くなる傾向があるため）、サムネイル成功の根拠や主要な好調要因として扱わないでください。
+# 制約
+- 挨拶やまとめは出力せず、指定4セクションのみ出力。
+- 見出し#や**は禁止、太字は*太字*を使用。
+- インプレッション1,500回未満の動画CTRは参考値とし成功根拠にしない。
 """
         # 総再生数が閾値未満の場合、追加指示を結合
         if view_growth is not None and view_growth < WEEKLY_VIEW_THRESHOLD:
             prompt += f"""
-# 特別指示（最優先で考慮してください）
-現在、週間の総再生数が{WEEKLY_VIEW_THRESHOLD}回未満（現状: {view_growth:,}回）に留まっています。
-これは、既存のチャンネル登録者以外へ動画が推奨（レコメンド）されておらず、YouTubeアルゴリズムからの評価が低い状態にあることを示しています。
-この深刻な現状を踏まえ、以下の点について必ずアドバイスのいずれかのセクション（特に「改善が必要な点」や「今後に向けた具体的なアクション案」）に含めてください：
-- CTR（クリック率）が極端に低く、インプレッション（露出）が伸び悩んでいることが低再生数の真因であること。
-- 再生数とチャンネル登録者数を伸ばすためには、CTR上位の動画10本ほどで「CTR 3%以上」を達成することが最優先の目標であること。
-- アルゴリズム評価を回復させ、新規視聴者にレコメンドされるための具体的なサムネイル改善や初動の工夫。
+# 特別指示
+週間再生数が{WEEKLY_VIEW_THRESHOLD}回未満（現状: {view_growth:,}回）と低迷中。低CTRによる露出不足が真因。「改善点」「アクション案」にて、CTR 3%達成に向けたサムネイル改善や新規レコメンド獲得の初動工夫を必ず提案せよ。
 """
         # ナレッジベースからの関連知識の抽出・結合
         knowledge_text = self.knowledge_mgr.get_relevant_knowledge(current_subscribers)
         if knowledge_text:
             prompt += f"""
-# 専門運用ナレッジ・アドバイス方針（最優先で考慮・反映してください）
-※以下の専門ナレッジ・運用方針を前提知識として踏まえた上で、クロのキャラクターとして分析とアドバイスを行ってください。
-{knowledge_text}
+# 専門ナレッジ
+{knowledge_text.strip()}
 """
+        return self._generate_with_retry(prompt)
         return self._generate_with_retry(prompt)
 
     def generate_monthly_strategy_advice(self, kpi_summary_text, audience_text, traffic_text, current_subscribers=None):
@@ -223,7 +199,7 @@ class GeminiClient:
             if m and m not in models:
                 models.append(m)
 
-        delays = [10, 20, 30]
+        delays = [15, 30, 60]
         max_attempts_per_model = 2
         total_attempt = 0
         last_exception = None
@@ -245,9 +221,14 @@ class GeminiClient:
                     if not _is_retryable_exception(e):
                         raise e
 
+                    err_desc = f"{type(e).__name__}"
+                    if hasattr(e, "code") and e.code:
+                        err_desc += f" (code: {e.code})"
+                    err_desc += f": {e}"
+
                     # 最終試行（全モデル・全回数終了）の場合は警告を出力してスロー
                     if model_idx == len(models) - 1 and attempt_in_model == max_attempts_per_model - 1:
-                        print(f"::warning::Gemini API / Network error on final attempt with model '{model_name}': {e}")
+                        print(f"::warning::Gemini API / Network error on final attempt with model '{model_name}': {err_desc}")
                         raise e
 
                     delay = delays[min(total_attempt - 1, len(delays) - 1)]
@@ -255,9 +236,9 @@ class GeminiClient:
                     # 次の試行がモデル切り替えかどうかの判定
                     if attempt_in_model == max_attempts_per_model - 1 and model_idx < len(models) - 1:
                         next_model = models[model_idx + 1]
-                        print(f"::warning::Gemini API error on model '{model_name}' ({e}). Retrying with fallback model '{next_model}' in {delay}s... (Total Attempt {total_attempt})")
+                        print(f"::warning::Gemini API error on model '{model_name}' ({err_desc}). Retrying with fallback model '{next_model}' in {delay}s... (Total Attempt {total_attempt})")
                     else:
-                        print(f"::warning::Gemini API / Network error on model '{model_name}' ({e}). Retrying in {delay}s... (Attempt {attempt_in_model + 1}/{max_attempts_per_model}, Total Attempt {total_attempt})")
+                        print(f"::warning::Gemini API / Network error on model '{model_name}' ({err_desc}). Retrying in {delay}s... (Attempt {attempt_in_model + 1}/{max_attempts_per_model}, Total Attempt {total_attempt})")
                     
                     time.sleep(delay)
         
