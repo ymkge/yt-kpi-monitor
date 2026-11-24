@@ -10,6 +10,54 @@ from src.slack_client import SlackClient
 
 load_dotenv()
 
+def format_weekly_video_rankings(top_views_videos=None, top_likes_videos=None, top_ctr_videos=None, min_impr=1500) -> str:
+    """
+    動画パフォーマンスランキングの各リストを重複排除し、1行パイプ区切りテキストに整形する。
+    """
+    if not (top_views_videos or top_likes_videos or top_ctr_videos):
+        return ""
+
+    merged = {}
+
+    def process_list(v_list, rank_name):
+        if not v_list:
+            return
+        for idx, v in enumerate(v_list, 1):
+            vid = v.get("video_id") or v.get("title")
+            if vid not in merged:
+                clean_title = (v.get("title") or "不明なタイトル").replace("|", "｜")
+                merged[vid] = {
+                    "title": clean_title,
+                    "views": v.get("views", 0),
+                    "likes": v.get("likes", 0),
+                    "impressions": v.get("impressions", 0),
+                    "ctr": v.get("ctr", 0.0),
+                    "ranks": []
+                }
+            merged[vid]["ranks"].append(f"{rank_name}{idx}位")
+            if v.get("impressions", 0) > merged[vid]["impressions"]:
+                merged[vid]["impressions"] = v.get("impressions", 0)
+            if v.get("ctr", 0.0) > merged[vid]["ctr"]:
+                merged[vid]["ctr"] = v.get("ctr", 0.0)
+
+    process_list(top_views_videos, "再生")
+    process_list(top_likes_videos, "いいね")
+    process_list(top_ctr_videos, "CTR")
+
+    lines = ["# 動画ランキング (直近28日)"]
+    for v in merged.values():
+        impr = v["impressions"]
+        ctr = v["ctr"]
+        if impr >= min_impr and ctr > 0:
+            ctr_text = f"CTR: {ctr:.2f}% (imp: {impr:,}回)"
+        else:
+            ctr_text = "CTR: 対象外"
+        ranks_text = " ".join([f"[{r}]" for r in v["ranks"]])
+        lines.append(f"- {v['title']} | 再生: {v['views']:,}回 | いいね: {v['likes']:,}回 | {ctr_text} | ランク: {ranks_text}")
+
+    return "\n".join(lines) + "\n"
+
+
 def main():
     channel_id = os.getenv("YOUTUBE_CHANNEL_ID")
     if not channel_id:
@@ -137,36 +185,23 @@ def main():
 
         cvr_note = " (※登録解除が上回り純減)" if sub_growth_val < 0 else ""
 
-        kpi_summary_text = f"""
-- 期間: {summary_data['start_date']} 〜 {summary_data['end_date']}
-- 登録者数増減: {sub_g:+,} 人 (現在: {summary_data['current_subscribers']:,} 人)
-- 総再生数増減: {view_g:+,} 回 (現在: {summary_data['current_views']:,} 回)
-- いいね数増減: {like_g:+,} 回 (現在: {summary_data['current_likes']:,} 回)
-- 登録転換率 (CVR): {cvr:.2f}%{cvr_note} (登録者増分 ÷ 再生数増分)
-"""
+        kpi_summary_text = (
+            f"[期間] {summary_data['start_date']}〜{summary_data['end_date']} | "
+            f"登録増: {sub_g:+,}人 (現{summary_data['current_subscribers']:,}人) | "
+            f"再生増: {view_g:+,}回 (現{summary_data['current_views']:,}回) | "
+            f"いいね増: {like_g:+,}回 (現{summary_data['current_likes']:,}回) | "
+            f"CVR: {cvr:.2f}%{cvr_note}\n"
+        )
 
-        # ランキング情報がある場合はプロンプトに補足
-        if top_views_videos or top_likes_videos or top_ctr_videos:
-            kpi_summary_text += "\n# 動画パフォーマンスランキング（直近28日間）\n"
-            kpi_summary_text += f"※インプレッション{min_impr:,}回未満の動画は統計的標本数が不足しているため（登録者中心の視聴）、CTR分析の対象外（非表示）としています。\n"
-            if top_views_videos:
-                kpi_summary_text += "## 再生数上位動画\n"
-                for idx, v in enumerate(top_views_videos, 1):
-                    impr_val = v.get("impressions", 0)
-                    ctr_val = v.get("ctr", 0.0)
-                    ctr_text = f", CTR: {ctr_val:.2f}% (インプレッション: {impr_val:,}回)" if (impr_val >= min_impr and ctr_val > 0) else ""
-                    kpi_summary_text += f"{idx}. {v['title']} (再生数: {v['views']:,}回, いいね数: {v['likes']:,}回{ctr_text})\n"
-            if top_likes_videos:
-                kpi_summary_text += "## 高評価（いいね）数上位動画\n"
-                for idx, v in enumerate(top_likes_videos, 1):
-                    impr_val = v.get("impressions", 0)
-                    ctr_val = v.get("ctr", 0.0)
-                    ctr_text = f", CTR: {ctr_val:.2f}% (インプレッション: {impr_val:,}回)" if (impr_val >= min_impr and ctr_val > 0) else ""
-                    kpi_summary_text += f"{idx}. {v['title']} (いいね数: {v['likes']:,}回, 再生数: {v['views']:,}回{ctr_text})\n"
-            if top_ctr_videos:
-                kpi_summary_text += "## クリック率（CTR）上位動画\n"
-                for idx, v in enumerate(top_ctr_videos, 1):
-                    kpi_summary_text += f"{idx}. {v['title']} (CTR: {v['ctr']:.2f}%, インプレッション: {v.get('impressions', 0):,}回, 再生数: {v['views']:,}回)\n"
+        # ランキング情報がある場合はパイプ区切り1行化して補足
+        rankings_text = format_weekly_video_rankings(
+            top_views_videos=top_views_videos,
+            top_likes_videos=top_likes_videos,
+            top_ctr_videos=top_ctr_videos,
+            min_impr=min_impr
+        )
+        if rankings_text:
+            kpi_summary_text += "\n" + rankings_text
 
         # 4. Geminiで戦略アドバイスを生成
         print("Generating strategy advice using Gemini API...")

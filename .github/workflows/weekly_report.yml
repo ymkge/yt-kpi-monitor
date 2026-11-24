@@ -1,15 +1,42 @@
 name: Weekly Strategy Report
 
 on:
-  schedule:
-    - cron: '17 6 * * 1' # UTC 06:17 Monday is JST 15:17 Monday (Avoid US peak hours & GitHub Actions queue delay)
+  workflow_run:
+    workflows: ["Daily KPI Alert"]
+    types:
+      - completed
   workflow_dispatch:
 
 env:
   TZ: Asia/Tokyo
 
 jobs:
+  check_schedule:
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    outputs:
+      should_run: ${{ steps.check.outputs.should_run }}
+    steps:
+      - name: Check Day of Week (JST)
+        id: check
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Manual trigger detected. Proceeding with weekly report."
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          else
+            DAY_OF_WEEK=$(TZ=Asia/Tokyo date +%u)
+            if [ "$DAY_OF_WEEK" -eq 1 ]; then
+              echo "Today is Monday in JST. Proceeding with weekly report."
+              echo "should_run=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "Today is not Monday in JST (Day of week: $DAY_OF_WEEK). Skipping weekly report."
+              echo "should_run=false" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
   report:
+    needs: check_schedule
+    if: needs.check_schedule.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -49,5 +76,3 @@ jobs:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_CHANNEL: ${{ secrets.SLACK_CHANNEL }}
         run: python -m src.main_weekly
-
-
